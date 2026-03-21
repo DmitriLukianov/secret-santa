@@ -13,7 +13,7 @@ env-cleanup:
 	@read -p "очистить все volume файлы окружения? Опасность утери данных.[y/n]: " ans; \
 	if [ "$$ans" = "y" ]; then \
 		docker compose down postgres && \
-		rm -rf out/pgdata && \
+		sudo rm -rf out/pgdata && \
 		echo "Файлы окружения очищены"; \
 	else \
 		echo "Очистка окружения отменена"; \
