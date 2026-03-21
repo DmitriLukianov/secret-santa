@@ -20,7 +20,6 @@ func NewWishlistHandler(uc *wishlist.UseCase) *WishlistHandler {
 	return &WishlistHandler{uc: uc}
 }
 
-// POST /users/{userId}/wishlist
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "userId")
 
@@ -48,7 +47,6 @@ func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-// GET /users/{userId}/wishlist
 func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "userId")
 
@@ -75,7 +73,6 @@ func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// DELETE /wishlist/{id}
 func (h *WishlistHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 

@@ -16,7 +16,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// GET BY EVENT (ВАЖНО: имя должно совпадать с интерфейсом)
 func (r *Repository) GetByEvent(ctx context.Context, eventID string) ([]entity.Participant, error) {
 	query := `
 		SELECT id, event_id, user_id
@@ -49,7 +48,6 @@ func (r *Repository) GetByEvent(ctx context.Context, eventID string) ([]entity.P
 	return participants, nil
 }
 
-// ADD PARTICIPANT
 func (r *Repository) Add(ctx context.Context, p entity.Participant) error {
 	query := `
 		INSERT INTO participants (id, event_id, user_id)
@@ -57,7 +55,7 @@ func (r *Repository) Add(ctx context.Context, p entity.Participant) error {
 	`
 
 	_, err := r.db.Exec(ctx, query,
-		p.ID, // 👈 ВАЖНО добавили id
+		p.ID,
 		p.EventID,
 		p.UserID,
 	)
@@ -65,7 +63,6 @@ func (r *Repository) Add(ctx context.Context, p entity.Participant) error {
 	return err
 }
 
-// DELETE
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM participants WHERE id = $1`
 

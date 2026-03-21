@@ -19,7 +19,6 @@ func NewAssignmentHandler(uc *assignment.UseCase) *AssignmentHandler {
 	return &AssignmentHandler{uc: uc}
 }
 
-// 🎁 POST /events/{eventId}/assign
 func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 	eventID := chi.URLParam(r, "eventId")
 
@@ -36,7 +35,6 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// 📦 GET /events/{eventId}/assignments
 func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
 	eventID := chi.URLParam(r, "eventId")
 

@@ -16,7 +16,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// CREATE MANY (сохранение жеребьёвки)
 func (r *Repository) CreateMany(ctx context.Context, assignments []entity.Assignment) error {
 	query := `
 		INSERT INTO assignments (id, event_id, giver_id, receiver_id)
@@ -40,7 +39,6 @@ func (r *Repository) CreateMany(ctx context.Context, assignments []entity.Assign
 	return nil
 }
 
-// GET BY EVENT
 func (r *Repository) GetByEvent(ctx context.Context, eventID string) ([]entity.Assignment, error) {
 	query := `
 		SELECT id, event_id, giver_id, receiver_id, created_at

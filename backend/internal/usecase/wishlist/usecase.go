@@ -18,7 +18,6 @@ func New(repo Repository) *UseCase {
 	return &UseCase{repo: repo}
 }
 
-// CREATE
 func (uc *UseCase) Create(ctx context.Context, input dto.CreateWishlistInput) error {
 	if input.UserID == "" {
 		return errors.New("user_id is required")
@@ -37,7 +36,6 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateWishlistInput) er
 	return uc.repo.Create(ctx, w)
 }
 
-// GET BY ID
 func (uc *UseCase) Get(ctx context.Context, id string) (*entity.Wishlist, error) {
 	if id == "" {
 		return nil, errors.New("id is required")
@@ -46,7 +44,6 @@ func (uc *UseCase) Get(ctx context.Context, id string) (*entity.Wishlist, error)
 	return uc.repo.GetByID(ctx, id)
 }
 
-// GET BY USER
 func (uc *UseCase) GetByUser(ctx context.Context, userID string) ([]entity.Wishlist, error) {
 	if userID == "" {
 		return nil, errors.New("user_id is required")
@@ -55,7 +52,6 @@ func (uc *UseCase) GetByUser(ctx context.Context, userID string) ([]entity.Wishl
 	return uc.repo.GetByUser(ctx, userID)
 }
 
-// UPDATE
 func (uc *UseCase) Update(ctx context.Context, id string, input dto.UpdateWishlistInput) error {
 	if id == "" {
 		return errors.New("id is required")
@@ -72,7 +68,6 @@ func (uc *UseCase) Update(ctx context.Context, id string, input dto.UpdateWishli
 	)
 }
 
-// DELETE
 func (uc *UseCase) Delete(ctx context.Context, id string) error {
 	if id == "" {
 		return errors.New("id is required")

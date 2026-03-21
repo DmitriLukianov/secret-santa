@@ -20,7 +20,6 @@ func NewParticipantHandler(uc *participantusecase.UseCase) *ParticipantHandler {
 	return &ParticipantHandler{uc: uc}
 }
 
-// ADD PARTICIPANT
 func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 	eventID := chi.URLParam(r, "eventId")
 
@@ -44,7 +43,6 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-// GET PARTICIPANTS BY EVENT
 func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
 	eventID := chi.URLParam(r, "eventId")
 
@@ -67,7 +65,6 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(resp)
 }
 
-// DELETE PARTICIPANT
 func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 

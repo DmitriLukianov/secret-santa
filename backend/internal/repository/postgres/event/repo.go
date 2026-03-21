@@ -18,7 +18,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// CREATE
 func (r *Repository) Create(ctx context.Context, event entity.Event) error {
 	query := `
 		INSERT INTO events (id, name, description, organizer_id, start_date, draw_date, end_date)
@@ -26,7 +25,7 @@ func (r *Repository) Create(ctx context.Context, event entity.Event) error {
 	`
 
 	_, err := r.db.Exec(ctx, query,
-		event.ID, // 👈 ВАЖНО (добавили id)
+		event.ID,
 		event.Name,
 		event.Description,
 		event.OrganizerID,
@@ -38,7 +37,6 @@ func (r *Repository) Create(ctx context.Context, event entity.Event) error {
 	return err
 }
 
-// GET BY ID
 func (r *Repository) GetByID(ctx context.Context, id string) (*entity.Event, error) {
 	query := `
 		SELECT id, name, description, organizer_id, start_date, draw_date, end_date, created_at
@@ -67,7 +65,6 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*entity.Event, err
 	return &e, nil
 }
 
-// GET ALL
 func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	query := `
 		SELECT id, name, description, organizer_id, start_date, draw_date, end_date, created_at
@@ -104,7 +101,6 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	return events, nil
 }
 
-// UPDATE (partial)
 func (r *Repository) Update(ctx context.Context, id string, name, description *string) error {
 	query := "UPDATE events SET "
 	args := []interface{}{}
@@ -122,7 +118,6 @@ func (r *Repository) Update(ctx context.Context, id string, name, description *s
 		argID++
 	}
 
-	// если ничего не передали
 	if len(args) == 0 {
 		return nil
 	}
@@ -135,7 +130,6 @@ func (r *Repository) Update(ctx context.Context, id string, name, description *s
 	return err
 }
 
-// DELETE
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM events WHERE id = $1`
 

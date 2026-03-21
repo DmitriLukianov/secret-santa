@@ -26,7 +26,7 @@ func (r *Repository) Create(ctx context.Context, user entity.User) error {
 	`
 
 	_, err := r.db.Exec(ctx, query,
-		user.ID, // 👈 ВАЖНО
+		user.ID,
 		user.Name,
 		user.Email,
 	)
@@ -34,7 +34,6 @@ func (r *Repository) Create(ctx context.Context, user entity.User) error {
 	return err
 }
 
-// GET BY ID
 func (r *Repository) GetByID(ctx context.Context, id string) (*entity.User, error) {
 	query := `
 		SELECT id, name, email, created_at
@@ -58,7 +57,6 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*entity.User, erro
 	return &user, nil
 }
 
-// GET ALL
 func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
 	query := `
 		SELECT id, name, email, created_at
@@ -91,7 +89,6 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
 	return users, nil
 }
 
-// UPDATE (partial)
 func (r *Repository) Update(ctx context.Context, id string, name, email *string) error {
 	query := "UPDATE users SET "
 	args := []interface{}{}
@@ -109,7 +106,6 @@ func (r *Repository) Update(ctx context.Context, id string, name, email *string)
 		argID++
 	}
 
-	// если нечего обновлять
 	if len(args) == 0 {
 		return nil
 	}
@@ -122,7 +118,6 @@ func (r *Repository) Update(ctx context.Context, id string, name, email *string)
 	return err
 }
 
-// DELETE
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM users WHERE id = $1`
 

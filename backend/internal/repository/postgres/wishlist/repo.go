@@ -16,7 +16,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// CREATE
 func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
 	query := `
 		INSERT INTO wishlists (
@@ -40,7 +39,6 @@ func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
 	return err
 }
 
-// GET BY ID
 func (r *Repository) GetByID(ctx context.Context, id string) (*entity.Wishlist, error) {
 	query := `
 		SELECT id, user_id, title, description, link, image_url, visibility, created_at
@@ -69,7 +67,6 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*entity.Wishlist, 
 	return &w, nil
 }
 
-// GET BY USER
 func (r *Repository) GetByUser(ctx context.Context, userID string) ([]entity.Wishlist, error) {
 	query := `
 		SELECT id, user_id, title, description, link, image_url, visibility, created_at
@@ -107,7 +104,6 @@ func (r *Repository) GetByUser(ctx context.Context, userID string) ([]entity.Wis
 	return result, nil
 }
 
-// UPDATE
 func (r *Repository) Update(
 	ctx context.Context,
 	id string,
@@ -138,7 +134,6 @@ func (r *Repository) Update(
 	return err
 }
 
-// DELETE
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM wishlists WHERE id = $1`
 

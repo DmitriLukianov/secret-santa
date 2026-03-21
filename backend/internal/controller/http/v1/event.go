@@ -20,7 +20,6 @@ func NewEventHandler(uc *eventusecase.UseCase) *EventHandler {
 	return &EventHandler{uc: uc}
 }
 
-// CREATE EVENT
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	var req request.CreateEventRequest
 
@@ -47,7 +46,6 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-// GET EVENT BY ID
 func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -70,7 +68,6 @@ func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GET ALL EVENTS
 func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	events, err := h.uc.GetAll(r.Context())
 	if err != nil {
@@ -95,7 +92,6 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// UPDATE EVENT
 func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -119,7 +115,6 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// DELETE EVENT
 func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 

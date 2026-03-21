@@ -1,9 +1,6 @@
--- Включаем расширение для UUID
+
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- ======================
--- USERS
--- ======================
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -11,9 +8,6 @@ CREATE TABLE users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ======================
--- EVENTS
--- ======================
 CREATE TABLE events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -30,9 +24,7 @@ CREATE TABLE events (
         ON DELETE CASCADE
 );
 
--- ======================
--- PARTICIPANTS
--- ======================
+
 CREATE TABLE participants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id UUID NOT NULL,
@@ -51,9 +43,6 @@ CREATE TABLE participants (
     CONSTRAINT unique_event_user UNIQUE (event_id, user_id)
 );
 
--- ======================
--- ASSIGNMENTS (жеребьёвка)
--- ======================
 CREATE TABLE assignments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id UUID NOT NULL,
@@ -79,9 +68,6 @@ CREATE TABLE assignments (
     CONSTRAINT unique_event_giver UNIQUE (event_id, giver_id)
 );
 
--- ======================
--- WISHLISTS
--- ======================
 CREATE TABLE wishlists (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
