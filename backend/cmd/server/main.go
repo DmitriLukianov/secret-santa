@@ -4,19 +4,34 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"secret-santa-backend/internal/handlers"
-	"secret-santa-backend/internal/repository"
-	"secret-santa-backend/internal/repository/postgres"
-	"secret-santa-backend/internal/services"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
+
+	// repos
+	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
+	eventrepo "secret-santa-backend/internal/repository/postgres/event"
+	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
+	userrepo "secret-santa-backend/internal/repository/postgres/user"
+	wishlistrepo "secret-santa-backend/internal/repository/postgres/wishlist"
+
+	// db
+	postgres "secret-santa-backend/internal/repository/postgres"
+
+	// usecases
+	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
+	eventusecase "secret-santa-backend/internal/usecase/event"
+	participantusecase "secret-santa-backend/internal/usecase/participant"
+	userusecase "secret-santa-backend/internal/usecase/user"
+	wishlistusecase "secret-santa-backend/internal/usecase/wishlist"
+
+	// handlers
+	v1 "secret-santa-backend/internal/controller/http/v1"
 )
 
 func main() {
 
-	err := godotenv.Load()
-	if err != nil {
+	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
 
@@ -25,29 +40,29 @@ func main() {
 		log.Fatal("DATABASE_URL not set")
 	}
 
-	db, err := repository.NewDB(connString)
+	db, err := postgres.NewDB(connString)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	userRepo := postgres.NewUserRepository(db)
-	eventRepo := postgres.NewEventRepository(db)
-	participantRepo := postgres.NewParticipantRepository(db)
-	wishlistRepo := postgres.NewWishlistRepository(db)
-	assignmentRepo := postgres.NewAssignmentRepository(db)
+	userRepo := userrepo.New(db)
+	eventRepo := eventrepo.New(db)
+	participantRepo := participantrepo.New(db)
+	assignmentRepo := assignmentrepo.New(db)
+	wishlistRepo := wishlistrepo.New(db)
 
-	userService := services.NewUserService(userRepo)
-	eventService := services.NewEventService(eventRepo)
-	participantService := services.NewParticipantService(participantRepo)
-	wishlistService := services.NewWishlistService(wishlistRepo)
-	assignmentService := services.NewAssignmentService(assignmentRepo)
+	userUC := userusecase.New(userRepo)
+	eventUC := eventusecase.New(eventRepo)
+	participantUC := participantusecase.New(participantRepo)
+	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo)
+	wishlistUC := wishlistusecase.New(wishlistRepo)
 
-	userHandler := handlers.NewUserHandler(userService)
-	eventHandler := handlers.NewEventHandler(eventService)
-	participantHandler := handlers.NewParticipantHandler(participantService)
-	wishlistHandler := handlers.NewWishlistHandler(wishlistService)
-	assignmentHandler := handlers.NewAssignmentHandler(assignmentService)
+	userHandler := v1.NewUserHandler(userUC)
+	eventHandler := v1.NewEventHandler(eventUC)
+	participantHandler := v1.NewParticipantHandler(participantUC)
+	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
+	wishlistHandler := v1.NewWishlistHandler(wishlistUC)
 
 	r := chi.NewRouter()
 
@@ -63,17 +78,19 @@ func main() {
 	r.Put("/events/{id}", eventHandler.UpdateEvent)
 	r.Delete("/events/{id}", eventHandler.DeleteEvent)
 
-	r.Post("/events/{event_id}/participants", participantHandler.JoinEvent)
-	r.Get("/events/{event_id}/participants", participantHandler.GetParticipants)
-	r.Delete("/events/{event_id}/participants/{user_id}", participantHandler.LeaveEvent)
+	r.Post("/events/{eventId}/participants", participantHandler.Add)
+	r.Get("/events/{eventId}/participants", participantHandler.GetByEvent)
+	r.Delete("/participants/{id}", participantHandler.Delete)
 
-	r.Post("/events/{event_id}/wishlist", wishlistHandler.CreateWishlist)
-	r.Get("/events/{event_id}/wishlist/{user_id}", wishlistHandler.GetWishlist)
-	r.Put("/wishlist/{id}", wishlistHandler.UpdateWishlist)
+	r.Post("/events/{eventId}/assign", assignmentHandler.Draw)
+	r.Get("/events/{eventId}/assignments", assignmentHandler.GetByEvent)
 
-	r.Post("/assignments", assignmentHandler.Create)
-	r.Get("/assignments/my", assignmentHandler.GetMyAssignment)
+	r.Post("/users/{userId}/wishlist", wishlistHandler.Create)
+	r.Get("/users/{userId}/wishlist", wishlistHandler.GetByUser)
+	r.Delete("/wishlist/{id}", wishlistHandler.Delete)
 
-	log.Println("Server started on :8080")
-	log.Fatal(http.ListenAndServe(":8080", r))
+	log.Println("🚀 Server running on :8080")
+	if err := http.ListenAndServe(":8080", r); err != nil {
+		log.Fatal(err)
+	}
 }
