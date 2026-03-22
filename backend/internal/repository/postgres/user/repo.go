@@ -124,3 +124,27 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
+
+func (r *Repository) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
+	query := `
+		SELECT id, name, email, created_at
+		FROM users
+		WHERE email = $1
+	`
+
+	row := r.db.QueryRow(ctx, query, email)
+
+	var user entity.User
+	err := row.Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
