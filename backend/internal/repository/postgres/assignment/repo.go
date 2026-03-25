@@ -5,6 +5,7 @@ import (
 
 	"secret-santa-backend/internal/entity"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -16,34 +17,24 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) CreateMany(ctx context.Context, assignments []entity.Assignment) error {
+// Create
+func (r *Repository) Create(ctx context.Context, a entity.Assignment) error {
 	query := `
-		INSERT INTO assignments (id, event_id, giver_id, receiver_id)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO assignments (id, event_id, giver_id, receiver_id, created_at)
+		VALUES ($1, $2, $3, $4, $5)
 	`
 
-	for _, a := range assignments {
-		_, err := r.db.Exec(
-			ctx,
-			query,
-			a.ID,
-			a.EventID,
-			a.GiverID,
-			a.ReceiverID,
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	_, err := r.db.Exec(ctx, query,
+		a.ID, a.EventID, a.GiverID, a.ReceiverID, a.CreatedAt,
+	)
+	return err
 }
 
-func (r *Repository) GetByEvent(ctx context.Context, eventID string) ([]entity.Assignment, error) {
+// GetByEvent
+func (r *Repository) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error) {
 	query := `
 		SELECT id, event_id, giver_id, receiver_id, created_at
-		FROM assignments
-		WHERE event_id = $1
+		FROM assignments WHERE event_id = $1
 	`
 
 	rows, err := r.db.Query(ctx, query, eventID)
@@ -52,24 +43,11 @@ func (r *Repository) GetByEvent(ctx context.Context, eventID string) ([]entity.A
 	}
 	defer rows.Close()
 
-	var result []entity.Assignment
+	return ScanAssignments(rows)
+}
 
-	for rows.Next() {
-		var a entity.Assignment
-
-		err := rows.Scan(
-			&a.ID,
-			&a.EventID,
-			&a.GiverID,
-			&a.ReceiverID,
-			&a.CreatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, a)
-	}
-
-	return result, nil
+// DeleteByEvent (для пересоздания жеребьёвки)
+func (r *Repository) DeleteByEvent(ctx context.Context, eventID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM assignments WHERE event_id = $1`, eventID)
+	return err
 }

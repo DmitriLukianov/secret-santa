@@ -79,15 +79,15 @@ func main() {
 
 	eventUC := eventusecase.New(eventRepo)
 	participantUC := participantusecase.New(participantRepo)
-	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo)
 	wishlistUC := wishlistusecase.New(wishlistRepo)
+	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo) // ← теперь с двумя репозиториями
 
 	// ==================== HANDLERS ====================
 	userHandler := v1.NewUserHandler(userUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
-	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC)
+	assignmentHandler := v1.NewAssignmentHandler(assignmentUC) // ← теперь объявлен
 	authHandler := v1.NewAuthHandler(provider, jwtManager, authUC)
 
 	r := chi.NewRouter()
@@ -100,28 +100,35 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.NewAuthMiddleware(jwtManager).Handler)
 
+		// Users
 		r.Post("/users", userHandler.CreateUser)
 		r.Get("/users", userHandler.GetUsers)
 		r.Get("/users/{id}", userHandler.GetUserByID)
 		r.Put("/users/{id}", userHandler.UpdateUser)
 		r.Delete("/users/{id}", userHandler.DeleteUser)
 
+		// Events
 		r.Post("/events", eventHandler.CreateEvent)
 		r.Get("/events", eventHandler.GetEvents)
 		r.Get("/events/{id}", eventHandler.GetEventByID)
 		r.Put("/events/{id}", eventHandler.UpdateEvent)
 		r.Delete("/events/{id}", eventHandler.DeleteEvent)
 
+		// Participants
 		r.Post("/events/{eventId}/participants", participantHandler.Add)
 		r.Get("/events/{eventId}/participants", participantHandler.GetByEvent)
+		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
 		r.Delete("/participants/{id}", participantHandler.Delete)
 
-		r.Post("/events/{eventId}/assign", assignmentHandler.Draw)
-		r.Get("/events/{eventId}/assignments", assignmentHandler.GetByEvent)
-
+		// Wishlists
 		r.Post("/users/{userId}/wishlist", wishlistHandler.Create)
 		r.Get("/users/{userId}/wishlist", wishlistHandler.GetByUser)
-		r.Delete("/wishlist/{id}", wishlistHandler.Delete)
+		r.Post("/wishlists/{wishlistId}/items", wishlistHandler.AddItem)
+		r.Get("/wishlists/{wishlistId}/items", wishlistHandler.GetItems)
+
+		// Assignment (жеребьёвка)
+		r.Post("/events/{eventId}/assign", assignmentHandler.Draw)           // запуск жеребьёвки
+		r.Get("/events/{eventId}/assignments", assignmentHandler.GetByEvent) // просмотр результатов
 	})
 
 	log.Println("🚀 Server running on :8080")

@@ -42,20 +42,36 @@ CREATE TABLE events (
 CREATE INDEX IF NOT EXISTS idx_events_organizer ON events(organizer_id);
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 -- ==================== PARTICIPANTS ====================
+-- ==================== PARTICIPANTS ====================
 CREATE TABLE participants (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id   UUID NOT NULL,
-    user_id    UUID NOT NULL,
-    role       TEXT NOT NULL DEFAULT 'participant',
-    gift_sent  BOOLEAN NOT NULL DEFAULT false,
-    gift_sent_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT now(),
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id      UUID NOT NULL,
+    user_id       UUID NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'participant',     -- organizer | participant
+    gift_sent     BOOLEAN NOT NULL DEFAULT false,
+    gift_sent_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ DEFAULT now(),
+    updated_at    TIMESTAMPTZ DEFAULT now(),
 
-    CONSTRAINT fk_participants_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
-    CONSTRAINT fk_participants_user  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_participants_event 
+        FOREIGN KEY (event_id) 
+        REFERENCES events(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_participants_user 
+        FOREIGN KEY (user_id) 
+        REFERENCES users(id) 
+        ON DELETE CASCADE,
+
     CONSTRAINT unique_event_user UNIQUE (event_id, user_id)
 );
 
+-- Индексы
+CREATE INDEX IF NOT EXISTS idx_participants_event ON participants(event_id);
+CREATE INDEX IF NOT EXISTS idx_participants_user ON participants(user_id);
+CREATE INDEX IF NOT EXISTS idx_participants_role ON participants(role);
+
+-- ==================== ASSIGNMENTS ====================
 -- ==================== ASSIGNMENTS ====================
 CREATE TABLE assignments (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -64,19 +80,57 @@ CREATE TABLE assignments (
     receiver_id  UUID NOT NULL,
     created_at   TIMESTAMPTZ DEFAULT now(),
 
-    CONSTRAINT fk_assignments_event    FOREIGN KEY (event_id)    REFERENCES events(id)    ON DELETE CASCADE,
-    CONSTRAINT fk_assignments_giver    FOREIGN KEY (giver_id)    REFERENCES users(id)    ON DELETE CASCADE,
-    CONSTRAINT fk_assignments_receiver FOREIGN KEY (receiver_id) REFERENCES users(id)    ON DELETE CASCADE,
+    CONSTRAINT fk_assignments_event 
+        FOREIGN KEY (event_id) 
+        REFERENCES events(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_assignments_giver 
+        FOREIGN KEY (giver_id) 
+        REFERENCES users(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_assignments_receiver 
+        FOREIGN KEY (receiver_id) 
+        REFERENCES users(id) 
+        ON DELETE CASCADE,
+
     CONSTRAINT unique_event_giver UNIQUE (event_id, giver_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_assignments_event ON assignments(event_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_giver ON assignments(giver_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_receiver ON assignments(receiver_id);
 -- ==================== WISHLISTS ====================
 CREATE TABLE wishlists (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    participant_id UUID NOT NULL,           -- привязка к участнику события
-    visibility    TEXT NOT NULL DEFAULT 'santa_only',
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    updated_at    TIMESTAMPTZ DEFAULT now(),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    participant_id  UUID NOT NULL,
+    visibility      TEXT NOT NULL DEFAULT 'santa_only',
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now(),
 
-    CONSTRAINT fk_wishlist_participant FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE
+    CONSTRAINT fk_wishlists_participant 
+        FOREIGN KEY (participant_id) 
+        REFERENCES participants(id) 
+        ON DELETE CASCADE
 );
+
+CREATE INDEX IF NOT EXISTS idx_wishlists_participant ON wishlists(participant_id);
+
+-- ==================== WISHLIST ITEMS ====================
+CREATE TABLE wishlist_items (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    wishlist_id  UUID NOT NULL,
+    title        TEXT NOT NULL,
+    link         TEXT,
+    image_url    TEXT,
+    comment      TEXT,
+    created_at   TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT fk_wishlist_items_wishlist 
+        FOREIGN KEY (wishlist_id) 
+        REFERENCES wishlists(id) 
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_wishlist_items_wishlist ON wishlist_items(wishlist_id);

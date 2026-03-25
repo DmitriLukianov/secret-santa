@@ -4,83 +4,145 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
-	"secret-santa-backend/internal/dto"
-	"secret-santa-backend/internal/usecase/wishlist"
-
-	"github.com/go-chi/chi/v5"
+	"secret-santa-backend/internal/usecase"
 )
 
 type WishlistHandler struct {
-	uc *wishlist.UseCase
+	uc usecase.WishlistUseCase
 }
 
-func NewWishlistHandler(uc *wishlist.UseCase) *WishlistHandler {
+func NewWishlistHandler(uc usecase.WishlistUseCase) *WishlistHandler {
 	return &WishlistHandler{uc: uc}
 }
 
+// Create — создаёт вишлист для участника
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID := chi.URLParam(r, "userId")
+	userIDStr := chi.URLParam(r, "userId")
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		http.Error(w, "invalid user id", http.StatusBadRequest)
+		return
+	}
 
-	var req request.WishlistRequest
+	var req request.CreateWishlistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	input := dto.CreateWishlistInput{
-		UserID:      userID,
-		Title:       req.Title,
-		Description: req.Description,
-		Link:        req.Link,
-		ImageURL:    req.ImageURL,
-		Visibility:  req.Visibility,
-	}
-
-	err := h.uc.Create(r.Context(), input)
+	wishlist, err := h.uc.Create(r.Context(), userID, req.Visibility)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	resp := response.WishlistResponse{
+		ID:            wishlist.ID.String(),
+		ParticipantID: wishlist.ParticipantID.String(),
+		Visibility:    wishlist.Visibility,
+		CreatedAt:     wishlist.CreatedAt,
+		UpdatedAt:     wishlist.UpdatedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-}
-
-func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
-	userID := chi.URLParam(r, "userId")
-
-	items, err := h.uc.GetByUser(r.Context(), userID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var resp []response.WishlistResponse
-
-	for _, wItem := range items {
-		resp = append(resp, response.WishlistResponse{
-			ID:          wItem.ID,
-			UserID:      wItem.UserID,
-			Title:       wItem.Title,
-			Description: wItem.Description,
-			Link:        wItem.Link,
-			ImageURL:    wItem.ImageURL,
-			Visibility:  wItem.Visibility,
-		})
-	}
-
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (h *WishlistHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+// AddItem — добавляет элемент в вишлист
+func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
+	wishlistIDStr := chi.URLParam(r, "wishlistId")
+	wishlistID, err := uuid.Parse(wishlistIDStr)
+	if err != nil {
+		http.Error(w, "invalid wishlist id", http.StatusBadRequest)
+		return
+	}
 
-	err := h.uc.Delete(r.Context(), id)
+	var req request.CreateWishlistItemRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	item, err := h.uc.AddItem(r.Context(), wishlistID, req.Title, req.Link, req.ImageURL, req.Comment)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	resp := response.WishlistItemResponse{
+		ID:        item.ID.String(),
+		Title:     item.Title,
+		Link:      item.Link,
+		ImageURL:  item.ImageURL,
+		Comment:   item.Comment,
+		CreatedAt: item.CreatedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(resp)
+}
+
+// GetByUser — возвращает вишлист участника
+func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
+	userIDStr := chi.URLParam(r, "userId")
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		http.Error(w, "invalid user id", http.StatusBadRequest)
+		return
+	}
+
+	wishlist, err := h.uc.GetByParticipant(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	resp := response.WishlistResponse{
+		ID:            wishlist.ID.String(),
+		ParticipantID: wishlist.ParticipantID.String(),
+		Visibility:    wishlist.Visibility,
+		CreatedAt:     wishlist.CreatedAt,
+		UpdatedAt:     wishlist.UpdatedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// GetItems — возвращает все элементы вишлиста
+func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
+	wishlistIDStr := chi.URLParam(r, "wishlistId")
+	wishlistID, err := uuid.Parse(wishlistIDStr)
+	if err != nil {
+		http.Error(w, "invalid wishlist id", http.StatusBadRequest)
+		return
+	}
+
+	items, err := h.uc.GetItems(r.Context(), wishlistID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var resp []response.WishlistItemResponse
+	for _, item := range items {
+		resp = append(resp, response.WishlistItemResponse{
+			ID:        item.ID.String(),
+			Title:     item.Title,
+			Link:      item.Link,
+			ImageURL:  item.ImageURL,
+			Comment:   item.Comment,
+			CreatedAt: item.CreatedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

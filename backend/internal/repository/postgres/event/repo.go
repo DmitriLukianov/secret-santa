@@ -31,19 +31,9 @@ func (r *Repository) Create(ctx context.Context, e entity.Event) error {
 	`
 
 	_, err := r.db.Exec(ctx, query,
-		e.ID,
-		e.Title,
-		e.Description,
-		e.Rules,
-		e.Recommendations,
-		e.OrganizerID,
-		e.StartDate,
-		e.DrawDate,
-		e.EndDate,
-		e.Status,
-		e.MaxParticipants,
-		e.CreatedAt,
-		e.UpdatedAt,
+		e.ID, e.Title, e.Description, e.Rules, e.Recommendations,
+		e.OrganizerID, e.StartDate, e.DrawDate, e.EndDate,
+		e.Status, e.MaxParticipants, e.CreatedAt, e.UpdatedAt,
 	)
 	return err
 }
@@ -58,18 +48,7 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, 
 	`
 
 	row := r.db.QueryRow(ctx, query, id)
-
-	var e entity.Event
-	err := row.Scan(
-		&e.ID, &e.Title, &e.Description, &e.Rules, &e.Recommendations,
-		&e.OrganizerID, &e.StartDate, &e.DrawDate, &e.EndDate,
-		&e.Status, &e.MaxParticipants,
-		&e.CreatedAt, &e.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &e, nil
+	return ScanEvent(row) // ← прямой вызов (без mapper.)
 }
 
 // GetAll
@@ -85,25 +64,12 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() // ← исправлено
 
-	var events []entity.Event
-	for rows.Next() {
-		var e entity.Event
-		if err := rows.Scan(
-			&e.ID, &e.Title, &e.Description, &e.Rules, &e.Recommendations,
-			&e.OrganizerID, &e.StartDate, &e.DrawDate, &e.EndDate,
-			&e.Status, &e.MaxParticipants,
-			&e.CreatedAt, &e.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		events = append(events, e)
-	}
-	return events, nil
+	return ScanEvents(rows) // ← прямой вызов (без mapper.)
 }
 
-// Update — partial update (полная реализация)
+// Update
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
 	query := "UPDATE events SET updated_at = NOW(), "
 	args := []interface{}{}

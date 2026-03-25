@@ -2,81 +2,98 @@ package assignment
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"math/rand"
-	"time"
 
-	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
+	"secret-santa-backend/internal/usecase"
 
 	"github.com/google/uuid"
 )
 
 type UseCase struct {
-	assignRepo AssignmentRepository
-	partRepo   ParticipantRepository
+	repo            Repository
+	participantRepo usecase.ParticipantRepository // теперь используем интерфейс из contracts.go
 }
 
-func New(assignRepo AssignmentRepository, partRepo ParticipantRepository) *UseCase {
+func New(repo Repository, participantRepo usecase.ParticipantRepository) *UseCase {
 	return &UseCase{
-		assignRepo: assignRepo,
-		partRepo:   partRepo,
+		repo:            repo,
+		participantRepo: participantRepo,
 	}
 }
 
-func (uc *UseCase) Draw(ctx context.Context, input dto.GenerateAssignmentInput) error {
-	if input.EventID == "" {
-		return errors.New("event_id is required")
+// Draw — запускает жеребьёвку (derangement: никто не дарит себе)
+func (uc *UseCase) Draw(ctx context.Context, eventID uuid.UUID) error {
+	if eventID == uuid.Nil {
+		return fmt.Errorf("event id is required")
 	}
 
-	participants, err := uc.partRepo.GetByEvent(ctx, input.EventID)
+	// Получаем участников
+	participants, err := uc.participantRepo.GetByEvent(ctx, eventID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get participants: %w", err)
 	}
-
 	if len(participants) < 2 {
-		return errors.New("not enough participants")
+		return fmt.Errorf("not enough participants for drawing")
 	}
 
-	existing, err := uc.assignRepo.GetByEvent(ctx, input.EventID)
+	// Удаляем старую жеребьёвку
+	if err := uc.repo.DeleteByEvent(ctx, eventID); err != nil {
+		return fmt.Errorf("failed to delete old assignments: %w", err)
+	}
+
+	// Генерируем derangement
+	assignments, err := uc.createDerangement(eventID, participants)
 	if err != nil {
-		return err
-	}
-	if len(existing) > 0 {
-		return errors.New("assignments already exist")
+		return fmt.Errorf("failed to create derangement: %w", err)
 	}
 
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	r.Shuffle(len(participants), func(i, j int) {
-		participants[i], participants[j] = participants[j], participants[i]
-	})
-
-	assignments := make([]entity.Assignment, 0, len(participants))
-
-	for i := 0; i < len(participants); i++ {
-		giver := participants[i]
-		receiver := participants[(i+1)%len(participants)]
-
-		if giver.UserID == receiver.UserID {
-			return errors.New("invalid assignment: self assignment")
+	// Сохраняем
+	for _, a := range assignments {
+		if err := uc.repo.Create(ctx, a); err != nil {
+			return fmt.Errorf("failed to save assignment: %w", err)
 		}
-
-		assignments = append(assignments, entity.Assignment{
-			ID:         uuid.NewString(),
-			EventID:    input.EventID,
-			GiverID:    giver.UserID,
-			ReceiverID: receiver.UserID,
-		})
 	}
 
-	return uc.assignRepo.CreateMany(ctx, assignments)
+	return nil
 }
 
-func (uc *UseCase) GetByEvent(ctx context.Context, eventID string) ([]entity.Assignment, error) {
-	if eventID == "" {
-		return nil, errors.New("event_id is required")
+// createDerangement — алгоритм жеребьёвки без самоназначения
+func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Participant) ([]entity.Assignment, error) {
+	n := len(participants)
+	ids := make([]uuid.UUID, n)
+	for i, p := range participants {
+		ids[i] = p.UserID
 	}
 
-	return uc.assignRepo.GetByEvent(ctx, eventID)
+	for attempt := 0; attempt < 100; attempt++ {
+		shuffled := make([]uuid.UUID, n)
+		copy(shuffled, ids)
+		rand.Shuffle(n, func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+
+		valid := true
+		for i := 0; i < n; i++ {
+			if shuffled[i] == ids[i] {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			assignments := make([]entity.Assignment, n)
+			for i := 0; i < n; i++ {
+				assignments[i] = entity.NewAssignment(eventID, ids[i], shuffled[i])
+			}
+			return assignments, nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed to generate valid derangement after 100 attempts")
+}
+
+func (uc *UseCase) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error) {
+	if eventID == uuid.Nil {
+		return nil, fmt.Errorf("event id is required")
+	}
+	return uc.repo.GetByEvent(ctx, eventID)
 }

@@ -2,9 +2,8 @@ package wishlist
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
-	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
@@ -18,60 +17,38 @@ func New(repo Repository) *UseCase {
 	return &UseCase{repo: repo}
 }
 
-func (uc *UseCase) Create(ctx context.Context, input dto.CreateWishlistInput) error {
-	if input.UserID == "" {
-		return errors.New("user_id is required")
+// Create — создаёт вишлист для участника
+func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibility string) (entity.Wishlist, error) {
+	wishlist := entity.NewWishlist(participantID, visibility)
+
+	if err := uc.repo.Create(ctx, wishlist); err != nil {
+		return entity.Wishlist{}, fmt.Errorf("failed to create wishlist: %w", err)
 	}
 
-	w := entity.Wishlist{
-		ID:          uuid.NewString(),
-		UserID:      input.UserID,
-		Title:       input.Title,
-		Description: input.Description,
-		Link:        input.Link,
-		ImageURL:    input.ImageURL,
-		Visibility:  input.Visibility,
-	}
-
-	return uc.repo.Create(ctx, w)
+	return wishlist, nil
 }
 
-func (uc *UseCase) Get(ctx context.Context, id string) (*entity.Wishlist, error) {
-	if id == "" {
-		return nil, errors.New("id is required")
+// AddItem — добавляет элемент в вишлист
+func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
+	item := entity.NewWishlistItem(wishlistID, title, link, imageURL, comment)
+
+	if err := uc.repo.CreateItem(ctx, item); err != nil {
+		return entity.WishlistItem{}, fmt.Errorf("failed to add item: %w", err)
 	}
 
-	return uc.repo.GetByID(ctx, id)
+	return item, nil
 }
 
-func (uc *UseCase) GetByUser(ctx context.Context, userID string) ([]entity.Wishlist, error) {
-	if userID == "" {
-		return nil, errors.New("user_id is required")
+func (uc *UseCase) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
+	if participantID == uuid.Nil {
+		return nil, fmt.Errorf("participant id is required")
 	}
-
-	return uc.repo.GetByUser(ctx, userID)
+	return uc.repo.GetByParticipant(ctx, participantID)
 }
 
-func (uc *UseCase) Update(ctx context.Context, id string, input dto.UpdateWishlistInput) error {
-	if id == "" {
-		return errors.New("id is required")
+func (uc *UseCase) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error) {
+	if wishlistID == uuid.Nil {
+		return nil, fmt.Errorf("wishlist id is required")
 	}
-
-	return uc.repo.Update(
-		ctx,
-		id,
-		input.Title,
-		input.Description,
-		input.Link,
-		input.ImageURL,
-		input.Visibility,
-	)
-}
-
-func (uc *UseCase) Delete(ctx context.Context, id string) error {
-	if id == "" {
-		return errors.New("id is required")
-	}
-
-	return uc.repo.Delete(ctx, id)
+	return uc.repo.GetItems(ctx, wishlistID)
 }

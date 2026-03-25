@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
@@ -18,33 +17,42 @@ func New(repo Repository) *UseCase {
 	return &UseCase{repo: repo}
 }
 
-func (uc *UseCase) Add(ctx context.Context, input dto.AddParticipantInput) error {
-	if input.EventID == "" {
-		return fmt.Errorf("event_id is required")
-	}
-	if input.UserID == "" {
-		return fmt.Errorf("user_id is required")
+// Create — добавляет участника в событие
+func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error) {
+	participant := entity.NewParticipant(eventID, userID, role)
+
+	if err := uc.repo.Create(ctx, participant); err != nil {
+		return entity.Participant{}, fmt.Errorf("failed to create participant: %w", err)
 	}
 
-	p := entity.Participant{
-		ID:      uuid.NewString(),
-		EventID: input.EventID,
-		UserID:  input.UserID,
-	}
-
-	return uc.repo.Add(ctx, p)
+	return participant, nil
 }
-func (uc *UseCase) GetByEvent(ctx context.Context, eventID string) ([]entity.Participant, error) {
-	if eventID == "" {
-		return nil, fmt.Errorf("event_id is required")
-	}
 
+func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error) {
+	if id == uuid.Nil {
+		return nil, fmt.Errorf("participant id is required")
+	}
+	return uc.repo.GetByID(ctx, id)
+}
+
+func (uc *UseCase) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error) {
+	if eventID == uuid.Nil {
+		return nil, fmt.Errorf("event id is required")
+	}
 	return uc.repo.GetByEvent(ctx, eventID)
 }
-func (uc *UseCase) Delete(ctx context.Context, id string) error {
-	if id == "" {
-		return fmt.Errorf("id is required")
-	}
 
+// MarkGiftSent — отметка, что участник отправил подарок
+func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID uuid.UUID) error {
+	if participantID == uuid.Nil {
+		return fmt.Errorf("participant id is required")
+	}
+	return uc.repo.UpdateGiftSent(ctx, participantID, true)
+}
+
+func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("participant id is required")
+	}
 	return uc.repo.Delete(ctx, id)
 }

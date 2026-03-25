@@ -5,46 +5,61 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
-	"secret-santa-backend/internal/controller/http/v1/request"
-	"secret-santa-backend/internal/controller/http/v1/response" // ← ВОТ ЭТО
-	"secret-santa-backend/internal/dto"
-	participantusecase "secret-santa-backend/internal/usecase/participant"
+	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/entity" // ← добавили для роли
+	"secret-santa-backend/internal/usecase"
 )
 
 type ParticipantHandler struct {
-	uc *participantusecase.UseCase
+	uc usecase.ParticipantUseCase
 }
 
-func NewParticipantHandler(uc *participantusecase.UseCase) *ParticipantHandler {
+func NewParticipantHandler(uc usecase.ParticipantUseCase) *ParticipantHandler {
 	return &ParticipantHandler{uc: uc}
 }
 
+// Add
 func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
-	eventID := chi.URLParam(r, "eventId")
-
-	var req request.AddParticipantRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "invalid event id", http.StatusBadRequest)
 		return
 	}
 
-	input := dto.AddParticipantInput{
-		EventID: eventID,
-		UserID:  req.UserID,
-	}
+	// TODO: позже брать из JWT middleware
+	userID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
 
-	err := h.uc.Add(r.Context(), input)
+	participant, err := h.uc.Create(r.Context(), eventID, userID, entity.ParticipantRoleParticipant)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	resp := response.ParticipantResponse{
+		ID:        participant.ID.String(),
+		EventID:   participant.EventID.String(),
+		UserID:    participant.UserID.String(),
+		Role:      participant.Role,
+		GiftSent:  participant.GiftSent,
+		CreatedAt: participant.CreatedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(resp)
 }
 
+// GetByEvent
 func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
-	eventID := chi.URLParam(r, "eventId")
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "invalid event id", http.StatusBadRequest)
+		return
+	}
 
 	participants, err := h.uc.GetByEvent(r.Context(), eventID)
 	if err != nil {
@@ -53,26 +68,53 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var resp []response.ParticipantResponse
-
 	for _, p := range participants {
 		resp = append(resp, response.ParticipantResponse{
-			ID:      p.ID,
-			EventID: p.EventID,
-			UserID:  p.UserID,
+			ID:        p.ID.String(),
+			EventID:   p.EventID.String(),
+			UserID:    p.UserID.String(),
+			Role:      p.Role,
+			GiftSent:  p.GiftSent,
+			CreatedAt: p.CreatedAt,
 		})
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+// MarkGiftSent
+func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid participant id", http.StatusBadRequest)
+		return
+	}
 
-	err := h.uc.Delete(r.Context(), id)
+	err = h.uc.MarkGiftSent(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// Delete
+func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid participant id", http.StatusBadRequest)
+		return
+	}
+
+	err = h.uc.Delete(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

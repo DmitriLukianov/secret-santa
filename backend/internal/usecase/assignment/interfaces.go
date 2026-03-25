@@ -4,13 +4,12 @@ import (
 	"context"
 
 	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
 )
 
-type AssignmentRepository interface {
-	CreateMany(ctx context.Context, assignments []entity.Assignment) error
-	GetByEvent(ctx context.Context, eventID string) ([]entity.Assignment, error)
-}
-
-type ParticipantRepository interface {
-	GetByEvent(ctx context.Context, eventID string) ([]entity.Participant, error)
+type Repository interface {
+	Create(ctx context.Context, assignment entity.Assignment) error
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
+	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 }
