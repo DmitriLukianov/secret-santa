@@ -7,13 +7,11 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// JWTManager управляет генерацией и парсингом JWT-токенов.
 type JWTManager struct {
 	secret []byte
 	ttl    time.Duration
 }
 
-// NewJWTManager создаёт JWTManager. Падает с ошибкой, если секрет пуст или слишком короткий.
 func NewJWTManager(secret string, ttl time.Duration) (*JWTManager, error) {
 	if secret == "" {
 		return nil, errors.New("jwt secret must not be empty")
@@ -24,13 +22,11 @@ func NewJWTManager(secret string, ttl time.Duration) (*JWTManager, error) {
 	return &JWTManager{secret: []byte(secret), ttl: ttl}, nil
 }
 
-// Claims — payload JWT-токена.
 type Claims struct {
 	UserID string `json:"user_id"`
 	jwt.RegisteredClaims
 }
 
-// GenerateToken создаёт подписанный JWT-токен для пользователя.
 func (m *JWTManager) GenerateToken(userID string) (string, error) {
 	claims := Claims{
 		UserID: userID,
@@ -46,7 +42,6 @@ func (m *JWTManager) GenerateToken(userID string) (string, error) {
 	return token.SignedString(m.secret)
 }
 
-// ParseToken проверяет и парсит JWT-токен.
 func (m *JWTManager) ParseToken(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {

@@ -36,7 +36,6 @@ func (p *GitHubProvider) GetAuthURL(state string) string {
 func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (UserInfo, error) {
 	client := p.config.Client(ctx, token)
 
-	// получаем пользователя
 	resp, err := client.Get("https://api.github.com/user")
 	if err != nil {
 		return UserInfo{}, err

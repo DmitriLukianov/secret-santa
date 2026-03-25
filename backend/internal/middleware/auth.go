@@ -12,17 +12,14 @@ type contextKey string
 
 const userKey contextKey = "userID"
 
-// AuthMiddleware — структура для middleware проверки JWT.
 type AuthMiddleware struct {
 	jwt *auth.JWTManager
 }
 
-// NewAuthMiddleware создаёт middleware с инжектированным JWTManager.
 func NewAuthMiddleware(jwt *auth.JWTManager) *AuthMiddleware {
 	return &AuthMiddleware{jwt: jwt}
 }
 
-// Handler проверяет JWT-токен и кладёт userID в контекст.
 func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -50,7 +47,6 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	})
 }
 
-// GetUserID достаёт userID из контекста.
 func GetUserID(r *http.Request) (string, bool) {
 	userID, ok := r.Context().Value(userKey).(string)
 	return userID, ok
