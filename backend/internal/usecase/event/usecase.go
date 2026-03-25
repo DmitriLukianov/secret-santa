@@ -2,7 +2,7 @@ package event
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
@@ -12,88 +12,54 @@ import (
 
 type UseCase struct {
 	repo Repository
-	log  *slog.Logger
 }
 
-func New(repo Repository, log *slog.Logger) *UseCase {
-	return &UseCase{
-		repo: repo,
-		log:  log,
-	}
+func New(repo Repository) *UseCase {
+	return &UseCase{repo: repo}
 }
 
-func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organizerID string) (entity.Event, error) {
-	// Здесь можно добавить валидацию дат и бизнес-правила позже
-
+// Create — создаёт событие
+func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error) {
 	event := entity.NewEvent(
-		input.Name,
-		uuid.MustParse(organizerID),
+		input.Title,
+		organizerID,
 		input.Description,
 		input.Rules,
 		input.Recommendations,
-		input.StartDate,
+		&input.StartDate,
 		input.DrawDate,
-		input.EndDate,
+		&input.EndDate,
 		input.MaxParticipants,
 	)
 
-	created, err := uc.repo.Create(ctx, event)
-	if err != nil {
-		uc.log.Error("failed to create event", "error", err)
-		return entity.Event{}, err
+	if err := uc.repo.Create(ctx, event); err != nil {
+		return entity.Event{}, fmt.Errorf("failed to create event: %w", err)
 	}
 
-	uc.log.Info("event created", "event_id", created.ID, "name", created.Name)
-	return created, nil
+	return event, nil
 }
 
-func (uc *UseCase) GetByID(ctx context.Context, id string) (entity.Event, error) {
+func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
+	if id == uuid.Nil {
+		return nil, fmt.Errorf("event id is required")
+	}
 	return uc.repo.GetByID(ctx, id)
 }
 
-func (uc *UseCase) List(ctx context.Context) ([]entity.Event, error) {
-	return uc.repo.List(ctx)
+func (uc *UseCase) GetAll(ctx context.Context) ([]entity.Event, error) {
+	return uc.repo.GetAll(ctx)
 }
 
-func (uc *UseCase) Update(ctx context.Context, id string, input dto.UpdateEventInput) (entity.Event, error) {
-	// Заглушка — позже реализуем полное обновление
-	event, err := uc.repo.GetByID(ctx, id)
-	if err != nil {
-		return entity.Event{}, err
+func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("event id is required")
 	}
-
-	// Применяем изменения из input (partial update)
-	if input.Name != nil {
-		event.Name = *input.Name
-	}
-	if input.Description != nil {
-		event.Description = input.Description
-	}
-	if input.Rules != nil {
-		event.Rules = input.Rules
-	}
-	if input.Recommendations != nil {
-		event.Recommendations = input.Recommendations
-	}
-	if input.StartDate != nil {
-		event.StartDate = input.StartDate
-	}
-	if input.DrawDate != nil {
-		event.DrawDate = input.DrawDate
-	}
-	if input.EndDate != nil {
-		event.EndDate = input.EndDate
-	}
-	if input.Status != nil {
-		event.Status = *input.Status
-	}
-	if input.MaxParticipants != nil {
-		event.MaxParticipants = *input.MaxParticipants
-	}
-
-	return uc.repo.Update(ctx, event)
+	return uc.repo.Update(ctx, id, input)
 }
 
-func (uc *UseCase) Delete(ctx context.Context, id string) error {
+func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("event id is required")
+	}
 	return uc.repo.Delete(ctx, id)
 }

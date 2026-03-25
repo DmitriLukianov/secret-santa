@@ -1,47 +1,43 @@
 package dto
 
-import (
-	"time"
+import "time"
 
-	"github.com/google/uuid"
-)
-
-// CreateEventInput — данные для создания нового события
+// CreateEventInput — данные для создания события
 type CreateEventInput struct {
-	Name            string     `json:"name" validate:"required,min=3,max=100"`
-	Description     *string    `json:"description" validate:"omitempty,max=1000"`
-	Rules           *string    `json:"rules" validate:"omitempty,max=2000"`
-	Recommendations *string    `json:"recommendations" validate:"omitempty,max=2000"`
-	StartDate       *time.Time `json:"startDate" validate:"omitempty"`
-	DrawDate        *time.Time `json:"drawDate" validate:"omitempty"`
-	EndDate         *time.Time `json:"endDate" validate:"omitempty"`
-	MaxParticipants int        `json:"maxParticipants" validate:"min=0"`
+	Title           string     `json:"title" validate:"required,min=3"`
+	Description     *string    `json:"description"`
+	Rules           *string    `json:"rules"`
+	Recommendations *string    `json:"recommendations"`
+	StartDate       time.Time  `json:"startDate" validate:"required"`
+	DrawDate        *time.Time `json:"drawDate"`
+	EndDate         time.Time  `json:"endDate" validate:"required"`
+	MaxParticipants int        `json:"maxParticipants" validate:"min=2"`
 }
 
-// UpdateEventInput — данные для обновления события (partial update)
+// UpdateEventInput — partial update (все поля pointer)
 type UpdateEventInput struct {
-	Name            *string    `json:"name" validate:"omitempty,min=3,max=100"`
-	Description     *string    `json:"description" validate:"omitempty,max=1000"`
-	Rules           *string    `json:"rules" validate:"omitempty,max=2000"`
-	Recommendations *string    `json:"recommendations" validate:"omitempty,max=2000"`
-	StartDate       *time.Time `json:"startDate" validate:"omitempty"`
-	DrawDate        *time.Time `json:"drawDate" validate:"omitempty"`
-	EndDate         *time.Time `json:"endDate" validate:"omitempty"`
-	Status          *string    `json:"status" validate:"omitempty,oneof=draft active finished cancelled"`
-	MaxParticipants *int       `json:"maxParticipants" validate:"omitempty,min=0"`
+	Title           *string    `json:"title"`
+	Description     *string    `json:"description"`
+	Rules           *string    `json:"rules"`
+	Recommendations *string    `json:"recommendations"`
+	StartDate       *time.Time `json:"startDate"`
+	DrawDate        *time.Time `json:"drawDate"`
+	EndDate         *time.Time `json:"endDate"`
+	Status          *string    `json:"status"`
+	MaxParticipants *int       `json:"maxParticipants"`
 }
 
-// EventResponse — ответ с полным событием (для фронтенда)
+// EventResponse — ответ API
 type EventResponse struct {
-	ID              uuid.UUID  `json:"id"`
-	Name            string     `json:"name"`
+	ID              string     `json:"id"`
+	Title           string     `json:"title"`
 	Description     *string    `json:"description,omitempty"`
 	Rules           *string    `json:"rules,omitempty"`
 	Recommendations *string    `json:"recommendations,omitempty"`
-	OrganizerID     uuid.UUID  `json:"organizerId"`
-	StartDate       *time.Time `json:"startDate,omitempty"`
+	OrganizerID     string     `json:"organizerId"`
+	StartDate       time.Time  `json:"startDate"`
 	DrawDate        *time.Time `json:"drawDate,omitempty"`
-	EndDate         *time.Time `json:"endDate,omitempty"`
+	EndDate         time.Time  `json:"endDate"`
 	Status          string     `json:"status"`
 	MaxParticipants int        `json:"maxParticipants"`
 	CreatedAt       time.Time  `json:"createdAt"`

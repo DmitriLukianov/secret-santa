@@ -18,3 +18,12 @@ type UserUseCase interface {
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateUserInput) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
+
+// EventUseCase — публичный интерфейс для событий
+type EventUseCase interface {
+	Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
+	GetAll(ctx context.Context) ([]entity.Event, error)
+	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}

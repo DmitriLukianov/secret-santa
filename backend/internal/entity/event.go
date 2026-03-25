@@ -9,23 +9,32 @@ import (
 // Event — событие «Тайный Санта»
 type Event struct {
 	ID              uuid.UUID  `db:"id"`
-	Name            string     `db:"name"`
-	Description     *string    `db:"description"` // может быть null
+	Title           string     `db:"title"` // было Name → теперь Title
+	Description     *string    `db:"description"`
 	Rules           *string    `db:"rules"`
 	Recommendations *string    `db:"recommendations"`
 	OrganizerID     uuid.UUID  `db:"organizer_id"`
-	StartDate       *time.Time `db:"start_date"`
-	DrawDate        *time.Time `db:"draw_date"` // дата жеребьёвки
-	EndDate         *time.Time `db:"end_date"`
-	Status          string     `db:"status"` // draft | active | finished | cancelled
+	StartDate       time.Time  `db:"start_date"` // теперь обязательно
+	DrawDate        *time.Time `db:"draw_date"`
+	EndDate         time.Time  `db:"end_date"` // теперь обязательно
+	Status          string     `db:"status"`
 	MaxParticipants int        `db:"max_participants"`
 	CreatedAt       time.Time  `db:"created_at"`
 	UpdatedAt       time.Time  `db:"updated_at"`
 }
 
-// NewEvent — конструктор для создания нового события
+// Константы статусов события (можно позже вынести в definitions/constants.go)
+const (
+	EventStatusDraft     = "draft"
+	EventStatusDrawing   = "drawing"
+	EventStatusActive    = "active"
+	EventStatusFinished  = "finished"
+	EventStatusCancelled = "cancelled"
+)
+
+// NewEvent — конструктор
 func NewEvent(
-	name string,
+	title string,
 	organizerID uuid.UUID,
 	description, rules, recommendations *string,
 	startDate, drawDate, endDate *time.Time,
@@ -33,17 +42,25 @@ func NewEvent(
 ) Event {
 	now := time.Now()
 
+	// Если даты не передали — ставим разумные значения
+	if startDate == nil {
+		startDate = &now
+	}
+	if endDate == nil {
+		endDate = &now
+	}
+
 	return Event{
 		ID:              uuid.New(),
-		Name:            name,
+		Title:           title,
 		Description:     description,
 		Rules:           rules,
 		Recommendations: recommendations,
 		OrganizerID:     organizerID,
-		StartDate:       startDate,
+		StartDate:       *startDate,
 		DrawDate:        drawDate,
-		EndDate:         endDate,
-		Status:          "draft", // по умолчанию черновик
+		EndDate:         *endDate,
+		Status:          EventStatusDraft,
 		MaxParticipants: maxParticipants,
 		CreatedAt:       now,
 		UpdatedAt:       now,

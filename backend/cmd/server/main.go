@@ -26,8 +26,6 @@ import (
 	userusecase "secret-santa-backend/internal/usecase/user"
 	wishlistusecase "secret-santa-backend/internal/usecase/wishlist"
 
-	// ← новый импорт (для UserUseCase)
-	"log/slog"
 	v1 "secret-santa-backend/internal/controller/http/v1"
 )
 
@@ -68,8 +66,6 @@ func main() {
 		os.Getenv("GITHUB_REDIRECT_URL"),
 	)
 
-	logger := slog.Default()
-
 	// ==================== REPOSITORIES ====================
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
@@ -78,12 +74,10 @@ func main() {
 	wishlistRepo := wishlistrepo.New(db)
 
 	// ==================== USECASES ====================
-	userUC := userusecase.New(userRepo) // ← user usecase
+	userUC := userusecase.New(userRepo)
+	authUC := authusecase.New(userUC)
 
-	// Важное изменение ↓↓↓
-	authUC := authusecase.New(userUC) // ← теперь передаём userUC (интерфейс), а не repo!
-
-	eventUC := eventusecase.New(eventRepo, logger)
+	eventUC := eventusecase.New(eventRepo)
 	participantUC := participantusecase.New(participantRepo)
 	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo)
 	wishlistUC := wishlistusecase.New(wishlistRepo)
@@ -98,9 +92,11 @@ func main() {
 
 	r := chi.NewRouter()
 
+	// Public routes
 	r.Get("/auth/login", authHandler.Login)
 	r.Get("/auth/callback", authHandler.Callback)
 
+	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.NewAuthMiddleware(jwtManager).Handler)
 

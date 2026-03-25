@@ -3,24 +3,24 @@ package request
 import "time"
 
 type CreateEventRequest struct {
-	Name            string     `json:"name"`
+	Title           string     `json:"title" validate:"required,min=3"`
 	Description     *string    `json:"description"`
 	Rules           *string    `json:"rules"`
 	Recommendations *string    `json:"recommendations"`
-	StartDate       *time.Time `json:"start_date"`
-	DrawDate        *time.Time `json:"draw_date"`
-	EndDate         *time.Time `json:"end_date"`
-	MaxParticipants int        `json:"max_participants"`
+	StartDate       time.Time  `json:"startDate" validate:"required"`
+	DrawDate        *time.Time `json:"drawDate"`
+	EndDate         time.Time  `json:"endDate" validate:"required"`
+	MaxParticipants int        `json:"maxParticipants" validate:"min=2"`
 }
 
 type UpdateEventRequest struct {
-	Name            *string    `json:"name"`
+	Title           *string    `json:"title"`
 	Description     *string    `json:"description"`
 	Rules           *string    `json:"rules"`
 	Recommendations *string    `json:"recommendations"`
-	StartDate       *time.Time `json:"start_date"`
-	DrawDate        *time.Time `json:"draw_date"`
-	EndDate         *time.Time `json:"end_date"`
+	StartDate       *time.Time `json:"startDate"`
+	DrawDate        *time.Time `json:"drawDate"`
+	EndDate         *time.Time `json:"endDate"`
 	Status          *string    `json:"status"`
-	MaxParticipants *int       `json:"max_participants"`
+	MaxParticipants *int       `json:"maxParticipants"`
 }

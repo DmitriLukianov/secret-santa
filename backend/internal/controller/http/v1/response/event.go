@@ -4,16 +4,16 @@ import "time"
 
 type EventResponse struct {
 	ID              string     `json:"id"`
-	Name            string     `json:"name"`
+	Title           string     `json:"title"`
 	Description     *string    `json:"description,omitempty"`
 	Rules           *string    `json:"rules,omitempty"`
 	Recommendations *string    `json:"recommendations,omitempty"`
-	OrganizerID     string     `json:"organizer_id"`
-	StartDate       *time.Time `json:"start_date,omitempty"`
-	DrawDate        *time.Time `json:"draw_date,omitempty"`
-	EndDate         *time.Time `json:"end_date,omitempty"`
+	OrganizerID     string     `json:"organizerId"`
+	StartDate       time.Time  `json:"startDate"`
+	DrawDate        *time.Time `json:"drawDate,omitempty"`
+	EndDate         time.Time  `json:"endDate"`
 	Status          string     `json:"status"`
-	MaxParticipants int        `json:"max_participants"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	MaxParticipants int        `json:"maxParticipants"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 }

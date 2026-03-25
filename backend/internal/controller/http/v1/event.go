@@ -5,21 +5,23 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/dto"
-	eventusecase "secret-santa-backend/internal/usecase/event"
+	"secret-santa-backend/internal/usecase" // ← публичный интерфейс
 )
 
 type EventHandler struct {
-	uc *eventusecase.UseCase
+	uc usecase.EventUseCase
 }
 
-func NewEventHandler(uc *eventusecase.UseCase) *EventHandler {
+func NewEventHandler(uc usecase.EventUseCase) *EventHandler {
 	return &EventHandler{uc: uc}
 }
 
+// CreateEvent — создаёт событие (организатор берётся из JWT позже)
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	var req request.CreateEventRequest
 
@@ -28,8 +30,12 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO: organizerID будем брать из middleware (auth context)
+	// Пока для теста берём первый UUID или передаём вручную
+	organizerID := uuid.MustParse("00000000-0000-0000-0000-000000000000") // ← заменишь позже
+
 	input := dto.CreateEventInput{
-		Name:            req.Name,
+		Title:           req.Title,
 		Description:     req.Description,
 		Rules:           req.Rules,
 		Recommendations: req.Recommendations,
@@ -39,34 +45,41 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		MaxParticipants: req.MaxParticipants,
 	}
 
-	organizerID := r.Header.Get("X-Organizer-ID")
-	created, err := h.uc.Create(r.Context(), input, organizerID)
+	event, err := h.uc.Create(r.Context(), input, organizerID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	resp := response.EventResponse{
+		ID:              event.ID.String(),
+		Title:           event.Title,
+		Description:     event.Description,
+		Rules:           event.Rules,
+		Recommendations: event.Recommendations,
+		OrganizerID:     event.OrganizerID.String(),
+		StartDate:       event.StartDate,
+		DrawDate:        event.DrawDate,
+		EndDate:         event.EndDate,
+		Status:          event.Status,
+		MaxParticipants: event.MaxParticipants,
+		CreatedAt:       event.CreatedAt,
+		UpdatedAt:       event.UpdatedAt,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(response.EventResponse{
-		ID:              created.ID.String(),
-		Name:            created.Name,
-		Description:     created.Description,
-		OrganizerID:     created.OrganizerID.String(),
-		StartDate:       created.StartDate,
-		DrawDate:        created.DrawDate,
-		EndDate:         created.EndDate,
-		Rules:           created.Rules,
-		Recommendations: created.Recommendations,
-		Status:          created.Status,
-		MaxParticipants: created.MaxParticipants,
-		CreatedAt:       created.CreatedAt,
-		UpdatedAt:       created.UpdatedAt,
-	})
+	json.NewEncoder(w).Encode(resp)
 }
 
+// GetEventByID
 func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid event id", http.StatusBadRequest)
+		return
+	}
 
 	event, err := h.uc.GetByID(r.Context(), id)
 	if err != nil {
@@ -74,43 +87,46 @@ func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(response.EventResponse{
+	resp := response.EventResponse{
 		ID:              event.ID.String(),
-		Name:            event.Name,
+		Title:           event.Title,
 		Description:     event.Description,
+		Rules:           event.Rules,
+		Recommendations: event.Recommendations,
 		OrganizerID:     event.OrganizerID.String(),
 		StartDate:       event.StartDate,
 		DrawDate:        event.DrawDate,
 		EndDate:         event.EndDate,
-		Rules:           event.Rules,
-		Recommendations: event.Recommendations,
 		Status:          event.Status,
 		MaxParticipants: event.MaxParticipants,
 		CreatedAt:       event.CreatedAt,
 		UpdatedAt:       event.UpdatedAt,
-	})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
+// GetEvents
 func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
-	events, err := h.uc.List(r.Context())
+	events, err := h.uc.GetAll(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	resp := make([]response.EventResponse, 0, len(events))
+	var resp []response.EventResponse
 	for _, e := range events {
 		resp = append(resp, response.EventResponse{
 			ID:              e.ID.String(),
-			Name:            e.Name,
+			Title:           e.Title,
 			Description:     e.Description,
+			Rules:           e.Rules,
+			Recommendations: e.Recommendations,
 			OrganizerID:     e.OrganizerID.String(),
 			StartDate:       e.StartDate,
 			DrawDate:        e.DrawDate,
 			EndDate:         e.EndDate,
-			Rules:           e.Rules,
-			Recommendations: e.Recommendations,
 			Status:          e.Status,
 			MaxParticipants: e.MaxParticipants,
 			CreatedAt:       e.CreatedAt,
@@ -119,11 +135,17 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(resp)
 }
 
+// UpdateEvent
 func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid event id", http.StatusBadRequest)
+		return
+	}
 
 	var req request.UpdateEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -132,7 +154,7 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := dto.UpdateEventInput{
-		Name:            req.Name,
+		Title:           req.Title,
 		Description:     req.Description,
 		Rules:           req.Rules,
 		Recommendations: req.Recommendations,
@@ -143,34 +165,26 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		MaxParticipants: req.MaxParticipants,
 	}
 
-	updated, err := h.uc.Update(r.Context(), id, input)
+	err = h.uc.Update(r.Context(), id, input)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(response.EventResponse{
-		ID:              updated.ID.String(),
-		Name:            updated.Name,
-		Description:     updated.Description,
-		OrganizerID:     updated.OrganizerID.String(),
-		StartDate:       updated.StartDate,
-		DrawDate:        updated.DrawDate,
-		EndDate:         updated.EndDate,
-		Rules:           updated.Rules,
-		Recommendations: updated.Recommendations,
-		Status:          updated.Status,
-		MaxParticipants: updated.MaxParticipants,
-		CreatedAt:       updated.CreatedAt,
-		UpdatedAt:       updated.UpdatedAt,
-	})
+	w.WriteHeader(http.StatusOK)
 }
 
+// DeleteEvent
 func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid event id", http.StatusBadRequest)
+		return
+	}
 
-	if err := h.uc.Delete(r.Context(), id); err != nil {
+	err = h.uc.Delete(r.Context(), id)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
