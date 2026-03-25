@@ -2,9 +2,10 @@ package event
 
 import "github.com/Masterminds/squirrel"
 
-// getEventQuery — базовый запрос для получения события
+var psql = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
 func getEventQuery() squirrel.SelectBuilder {
-	return squirrel.Select(
+	return psql.Select(
 		"id", "name", "description", "rules", "recommendations",
 		"organizer_id", "start_date", "draw_date", "end_date",
 		"status", "max_participants", "created_at", "updated_at",
@@ -12,9 +13,12 @@ func getEventQuery() squirrel.SelectBuilder {
 		From("events")
 }
 
-// createEventQuery — запрос на создание события
+func listEventsQuery() squirrel.SelectBuilder {
+	return getEventQuery()
+}
+
 func createEventQuery() squirrel.InsertBuilder {
-	return squirrel.Insert("events").
+	return psql.Insert("events").
 		Columns(
 			"id", "name", "description", "rules", "recommendations",
 			"organizer_id", "start_date", "draw_date", "end_date",
@@ -22,7 +26,10 @@ func createEventQuery() squirrel.InsertBuilder {
 		)
 }
 
-// updateEventQuery — запрос на обновление события
 func updateEventQuery() squirrel.UpdateBuilder {
-	return squirrel.Update("events")
+	return psql.Update("events")
+}
+
+func deleteEventQuery() squirrel.DeleteBuilder {
+	return psql.Delete("events")
 }

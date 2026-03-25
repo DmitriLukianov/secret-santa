@@ -9,30 +9,28 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 
+	authpkg "secret-santa-backend/internal/auth"
 	"secret-santa-backend/internal/middleware"
 
+	postgres "secret-santa-backend/internal/repository/postgres"
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
 	eventrepo "secret-santa-backend/internal/repository/postgres/event"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
 	userrepo "secret-santa-backend/internal/repository/postgres/user"
 	wishlistrepo "secret-santa-backend/internal/repository/postgres/wishlist"
 
-	postgres "secret-santa-backend/internal/repository/postgres"
-
 	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
+	authusecase "secret-santa-backend/internal/usecase/auth"
 	eventusecase "secret-santa-backend/internal/usecase/event"
 	participantusecase "secret-santa-backend/internal/usecase/participant"
 	userusecase "secret-santa-backend/internal/usecase/user"
 	wishlistusecase "secret-santa-backend/internal/usecase/wishlist"
 
-	oauth "secret-santa-backend/internal/auth"
-	authusecase "secret-santa-backend/internal/usecase/auth"
-
+	"log/slog"
 	v1 "secret-santa-backend/internal/controller/http/v1"
 )
 
 func main() {
-
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
@@ -58,16 +56,18 @@ func main() {
 		jwtTTL = 24 * time.Hour
 	}
 
-	jwtManager, err := oauth.NewJWTManager(jwtSecret, jwtTTL)
+	jwtManager, err := authpkg.NewJWTManager(jwtSecret, jwtTTL)
 	if err != nil {
 		log.Fatal("failed to create JWT manager:", err)
 	}
 
-	provider := oauth.NewGitHubProvider(
+	provider := authpkg.NewGitHubProvider(
 		os.Getenv("GITHUB_CLIENT_ID"),
 		os.Getenv("GITHUB_CLIENT_SECRET"),
 		os.Getenv("GITHUB_REDIRECT_URL"),
 	)
+
+	logger := slog.Default()
 
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
@@ -76,11 +76,10 @@ func main() {
 	wishlistRepo := wishlistrepo.New(db)
 
 	userUC := userusecase.New(userRepo)
-	eventUC := eventusecase.New(eventRepo)
+	eventUC := eventusecase.New(eventRepo, logger)
 	participantUC := participantusecase.New(participantRepo)
 	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo)
 	wishlistUC := wishlistusecase.New(wishlistRepo)
-
 	authUC := authusecase.New(userRepo)
 
 	userHandler := v1.NewUserHandler(userUC)
@@ -88,7 +87,6 @@ func main() {
 	participantHandler := v1.NewParticipantHandler(participantUC)
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC)
-
 	authHandler := v1.NewAuthHandler(provider, jwtManager, authUC)
 
 	r := chi.NewRouter()

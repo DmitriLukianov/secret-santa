@@ -1,15 +1,13 @@
 package event
 
 import (
-	"secret-santa-backend/internal/entity"
+	"github.com/jackc/pgx/v5"
 
-	"github.com/georgysavva/scany/v2/dbscan"
+	"secret-santa-backend/internal/entity"
 )
 
-// mapRowToEvent — преобразует одну строку из БД в entity.Event
-func mapRowToEvent(row dbscan.Row) (entity.Event, error) {
+func mapRowToEvent(row pgx.Row) (entity.Event, error) {
 	var e entity.Event
-
 	err := row.Scan(
 		&e.ID,
 		&e.Name,
@@ -25,22 +23,33 @@ func mapRowToEvent(row dbscan.Row) (entity.Event, error) {
 		&e.CreatedAt,
 		&e.UpdatedAt,
 	)
-	if err != nil {
-		return entity.Event{}, err
-	}
-	return e, nil
+	return e, err
 }
 
-// mapRowsToEvents — преобразует несколько строк в слайс событий
-func mapRowsToEvents(rows dbscan.Rows) ([]entity.Event, error) {
+func mapRowsToEvents(rows pgx.Rows) ([]entity.Event, error) {
 	var events []entity.Event
 
 	for rows.Next() {
-		event, err := mapRowToEvent(rows) // ← здесь передаём Rows, но внутри функции используется Row
-		if err != nil {
+		var e entity.Event
+		if err := rows.Scan(
+			&e.ID,
+			&e.Name,
+			&e.Description,
+			&e.Rules,
+			&e.Recommendations,
+			&e.OrganizerID,
+			&e.StartDate,
+			&e.DrawDate,
+			&e.EndDate,
+			&e.Status,
+			&e.MaxParticipants,
+			&e.CreatedAt,
+			&e.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
-		events = append(events, event)
+		events = append(events, e)
 	}
-	return events, nil
+
+	return events, rows.Err()
 }
