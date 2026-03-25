@@ -12,8 +12,18 @@ type contextKey string
 
 const userKey contextKey = "userID"
 
-// Middleware проверки JWT
-func AuthMiddleware(next http.Handler) http.Handler {
+// AuthMiddleware — структура для middleware проверки JWT.
+type AuthMiddleware struct {
+	jwt *auth.JWTManager
+}
+
+// NewAuthMiddleware создаёт middleware с инжектированным JWTManager.
+func NewAuthMiddleware(jwt *auth.JWTManager) *AuthMiddleware {
+	return &AuthMiddleware{jwt: jwt}
+}
+
+// Handler проверяет JWT-токен и кладёт userID в контекст.
+func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 
@@ -22,29 +32,25 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Ожидаем формат: Bearer <token>
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
+		if !strings.HasPrefix(authHeader, "Bearer ") {
 			http.Error(w, "invalid auth header", http.StatusUnauthorized)
 			return
 		}
 
-		tokenStr := parts[1]
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-		claims, err := auth.ParseToken(tokenStr)
+		claims, err := m.jwt.ParseToken(tokenStr)
 		if err != nil {
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		// кладём userID в контекст
 		ctx := context.WithValue(r.Context(), userKey, claims.UserID)
-
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// Достаём userID из контекста
+// GetUserID достаёт userID из контекста.
 func GetUserID(r *http.Request) (string, bool) {
 	userID, ok := r.Context().Value(userKey).(string)
 	return userID, ok

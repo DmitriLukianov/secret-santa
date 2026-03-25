@@ -97,7 +97,7 @@ func main() {
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC)
 
 	// 🔥 AUTH HANDLER
-	authHandler := v1.NewAuthHandler(provider, authUC)
+	authHandler := v1.NewAuthHandler(provider, jwtManager, authUC)
 
 	// ======================
 	// ROUTER
@@ -114,7 +114,7 @@ func main() {
 	// 🔒 PROTECTED ROUTES
 	// ======================
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.AuthMiddleware)
+		r.Use(middleware.NewAuthMiddleware(jwtManager).Handler)
 
 		// USERS
 		r.Post("/users", userHandler.CreateUser)

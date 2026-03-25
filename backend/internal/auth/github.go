@@ -59,9 +59,14 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 		name = user.Login
 	}
 
+	email := user.Email
+	if email == "" {
+		email = strconv.Itoa(user.ID) + "@github.local"
+	}
+
 	return UserInfo{
 		ID:    strconv.Itoa(user.ID),
 		Name:  name,
-		Email: user.Email,
+		Email: email,
 	}, nil
 }

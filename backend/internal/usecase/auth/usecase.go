@@ -2,8 +2,9 @@ package auth
 
 import (
 	"context"
+	"errors"
 
-	"secret-santa-backend/internal/auth"
+	internalauth "secret-santa-backend/internal/auth"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
@@ -17,22 +18,29 @@ func New(userRepo UserRepository) *UseCase {
 	return &UseCase{userRepo: userRepo}
 }
 
-func (uc *UseCase) LoginWithOAuth(ctx context.Context, user auth.UserInfo) (string, error) {
-	// 🔍 пробуем найти пользователя
-	existing, err := uc.userRepo.GetByID(ctx, user.ID)
+// LoginWithOAuth — найти пользователя по oauth_id или создать нового.
+// Возвращает userID (UUID строкой).
+func (uc *UseCase) LoginWithOAuth(ctx context.Context, info internalauth.UserInfo) (string, error) {
+	if info.ID == "" {
+		return "", errors.New("oauth provider returned empty user id")
+	}
+
+	// 1. Пробуем найти существующего пользователя по OAuthID
+	existing, err := uc.userRepo.GetByOAuthID(ctx, info.ID)
 	if err == nil && existing != nil {
+		// пользователь уже есть — возвращаем его ID
 		return existing.ID, nil
 	}
 
-	// ➕ если нет — создаём
+	// 2. Если не нашли — создаём нового
 	newUser := entity.User{
-		ID:    uuid.NewString(),
-		Name:  user.Name,
-		Email: user.Email,
+		ID:      uuid.NewString(),
+		Name:    info.Name,
+		Email:   info.Email,
+		OAuthID: info.ID,
 	}
 
-	err = uc.userRepo.Create(ctx, newUser)
-	if err != nil {
+	if err := uc.userRepo.Create(ctx, newUser); err != nil {
 		return "", err
 	}
 
