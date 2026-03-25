@@ -18,17 +18,18 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// CREATE
+// CREATE — сохраняет пользователя с oauth_id
 func (r *Repository) Create(ctx context.Context, user entity.User) error {
 	query := `
-		INSERT INTO users (id, name, email)
-		VALUES ($1, $2, $3)
+		INSERT INTO users (id, name, email, oauth_id)
+		VALUES ($1, $2, $3, $4)
 	`
 
 	_, err := r.db.Exec(ctx, query,
 		user.ID,
 		user.Name,
 		user.Email,
+		user.OAuthID,
 	)
 
 	return err
@@ -36,7 +37,7 @@ func (r *Repository) Create(ctx context.Context, user entity.User) error {
 
 func (r *Repository) GetByID(ctx context.Context, id string) (*entity.User, error) {
 	query := `
-		SELECT id, name, email, created_at
+		SELECT id, name, email, oauth_id, created_at
 		FROM users
 		WHERE id = $1
 	`
@@ -48,6 +49,32 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*entity.User, erro
 		&user.ID,
 		&user.Name,
 		&user.Email,
+		&user.OAuthID,
+		&user.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+// GetByOAuthID — поиск пользователя по идентификатору OAuth-провайдера (GitHub id)
+func (r *Repository) GetByOAuthID(ctx context.Context, oauthID string) (*entity.User, error) {
+	query := `
+		SELECT id, name, email, oauth_id, created_at
+		FROM users
+		WHERE oauth_id = $1
+	`
+
+	row := r.db.QueryRow(ctx, query, oauthID)
+
+	var user entity.User
+	err := row.Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.OAuthID,
 		&user.CreatedAt,
 	)
 	if err != nil {
@@ -59,7 +86,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*entity.User, erro
 
 func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
 	query := `
-		SELECT id, name, email, created_at
+		SELECT id, name, email, oauth_id, created_at
 		FROM users
 	`
 
@@ -78,6 +105,7 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
 			&u.ID,
 			&u.Name,
 			&u.Email,
+			&u.OAuthID,
 			&u.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -123,4 +151,29 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 
 	_, err := r.db.Exec(ctx, query, id)
 	return err
+}
+
+func (r *Repository) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
+	query := `
+		SELECT id, name, email, oauth_id, created_at
+		FROM users
+		WHERE email = $1
+	`
+
+	row := r.db.QueryRow(ctx, query, email)
+
+	var user entity.User
+	err := row.Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.OAuthID,
+		&user.CreatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }
