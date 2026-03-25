@@ -2,11 +2,12 @@ package event
 
 import (
 	"context"
-	"strconv"
-	"strings"
+	"time"
 
 	"secret-santa-backend/internal/entity"
 
+	"github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -18,121 +19,62 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, event entity.Event) error {
-	query := `
-		INSERT INTO events (id, name, description, organizer_id, start_date, draw_date, end_date)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
-	`
+func (r *Repository) Create(ctx context.Context, event entity.Event) (entity.Event, error) {
+	query := createEventQuery().
+		Values(
+			event.ID, event.Name, event.Description, event.Rules, event.Recommendations,
+			event.OrganizerID, event.StartDate, event.DrawDate, event.EndDate,
+			event.Status, event.MaxParticipants,
+		).
+		Suffix("RETURNING *")
 
-	_, err := r.db.Exec(ctx, query,
-		event.ID,
-		event.Name,
-		event.Description,
-		event.OrganizerID,
-		event.StartDate,
-		event.DrawDate,
-		event.EndDate,
-	)
-
-	return err
+	row := r.db.QueryRowxContext(ctx, query)
+	return mapRowToEvent(row)
 }
 
-func (r *Repository) GetByID(ctx context.Context, id string) (*entity.Event, error) {
-	query := `
-		SELECT id, name, description, organizer_id, start_date, draw_date, end_date, created_at
-		FROM events
-		WHERE id = $1
-	`
+func (r *Repository) GetByID(ctx context.Context, id string) (entity.Event, error) {
+	uid, _ := uuid.Parse(id)
+	query := getEventQuery().Where(squirrel.Eq{"id": uid})
 
-	row := r.db.QueryRow(ctx, query, id)
-
-	var e entity.Event
-	err := row.Scan(
-		&e.ID,
-		&e.Name,
-		&e.Description,
-		&e.OrganizerID,
-		&e.StartDate,
-		&e.DrawDate,
-		&e.EndDate,
-		&e.CreatedAt,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &e, nil
+	row := r.db.QueryRowxContext(ctx, query)
+	return mapRowToEvent(row)
 }
 
-func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
-	query := `
-		SELECT id, name, description, organizer_id, start_date, draw_date, end_date, created_at
-		FROM events
-	`
+func (r *Repository) List(ctx context.Context) ([]entity.Event, error) {
+	query := getEventQuery().OrderBy("created_at DESC")
 
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.QueryxContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var events []entity.Event
-
-	for rows.Next() {
-		var e entity.Event
-
-		if err := rows.Scan(
-			&e.ID,
-			&e.Name,
-			&e.Description,
-			&e.OrganizerID,
-			&e.StartDate,
-			&e.DrawDate,
-			&e.EndDate,
-			&e.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-
-		events = append(events, e)
-	}
-
-	return events, nil
+	return mapRowsToEvents(rows)
 }
 
-func (r *Repository) Update(ctx context.Context, id string, name, description *string) error {
-	query := "UPDATE events SET "
-	args := []interface{}{}
-	argID := 1
+func (r *Repository) Update(ctx context.Context, event entity.Event) (entity.Event, error) {
+	query := updateEventQuery().
+		Set("name", event.Name).
+		Set("description", event.Description).
+		Set("rules", event.Rules).
+		Set("recommendations", event.Recommendations).
+		Set("start_date", event.StartDate).
+		Set("draw_date", event.DrawDate).
+		Set("end_date", event.EndDate).
+		Set("status", event.Status).
+		Set("max_participants", event.MaxParticipants).
+		Set("updated_at", time.Now()).
+		Where(squirrel.Eq{"id": event.ID}).
+		Suffix("RETURNING *")
 
-	if name != nil {
-		query += "name = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *name)
-		argID++
-	}
-
-	if description != nil {
-		query += "description = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *description)
-		argID++
-	}
-
-	if len(args) == 0 {
-		return nil
-	}
-
-	query = strings.TrimSuffix(query, ", ")
-	query += " WHERE id = $" + strconv.Itoa(argID)
-	args = append(args, id)
-
-	_, err := r.db.Exec(ctx, query, args...)
-	return err
+	row := r.db.QueryRowxContext(ctx, query)
+	return mapRowToEvent(row)
 }
 
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	query := `DELETE FROM events WHERE id = $1`
+	uid, _ := uuid.Parse(id)
+	query := squirrel.Delete("events").Where(squirrel.Eq{"id": uid})
 
-	_, err := r.db.Exec(ctx, query, id)
+	_, err := r.db.ExecContext(ctx, query)
 	return err
 }
