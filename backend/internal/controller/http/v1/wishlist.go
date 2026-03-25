@@ -9,6 +9,7 @@ import (
 
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -20,12 +21,10 @@ func NewWishlistHandler(uc usecase.WishlistUseCase) *WishlistHandler {
 	return &WishlistHandler{uc: uc}
 }
 
-// Create — создаёт вишлист для участника
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userIDStr := chi.URLParam(r, "userId")
-	userID, err := uuid.Parse(userIDStr)
+	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		http.Error(w, "invalid user id", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
@@ -54,7 +53,6 @@ func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// AddItem — добавляет элемент в вишлист
 func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)
@@ -89,12 +87,10 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GetByUser — возвращает вишлист участника
 func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
-	userIDStr := chi.URLParam(r, "userId")
-	userID, err := uuid.Parse(userIDStr)
+	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		http.Error(w, "invalid user id", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
@@ -116,7 +112,6 @@ func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GetItems — возвращает все элементы вишлиста
 func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)

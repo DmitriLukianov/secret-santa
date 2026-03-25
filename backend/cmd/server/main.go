@@ -80,14 +80,14 @@ func main() {
 	eventUC := eventusecase.New(eventRepo)
 	participantUC := participantusecase.New(participantRepo)
 	wishlistUC := wishlistusecase.New(wishlistRepo)
-	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo) // ← теперь с двумя репозиториями
+	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo)
 
 	// ==================== HANDLERS ====================
 	userHandler := v1.NewUserHandler(userUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC)
-	assignmentHandler := v1.NewAssignmentHandler(assignmentUC) // ← теперь объявлен
+	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	authHandler := v1.NewAuthHandler(provider, jwtManager, authUC)
 
 	r := chi.NewRouter()
@@ -127,8 +127,8 @@ func main() {
 		r.Get("/wishlists/{wishlistId}/items", wishlistHandler.GetItems)
 
 		// Assignment (жеребьёвка)
-		r.Post("/events/{eventId}/assign", assignmentHandler.Draw)           // запуск жеребьёвки
-		r.Get("/events/{eventId}/assignments", assignmentHandler.GetByEvent) // просмотр результатов
+		r.Post("/events/{eventId}/assign", assignmentHandler.Draw)
+		r.Get("/events/{eventId}/assignments", assignmentHandler.GetByEvent)
 	})
 
 	log.Println("🚀 Server running on :8080")

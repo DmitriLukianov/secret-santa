@@ -8,7 +8,8 @@ import (
 	"github.com/google/uuid"
 
 	"secret-santa-backend/internal/controller/http/v1/response"
-	"secret-santa-backend/internal/entity" // ← добавили для роли
+	"secret-santa-backend/internal/entity"
+	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -20,7 +21,6 @@ func NewParticipantHandler(uc usecase.ParticipantUseCase) *ParticipantHandler {
 	return &ParticipantHandler{uc: uc}
 }
 
-// Add
 func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
@@ -29,8 +29,11 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: позже брать из JWT middleware
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 
 	participant, err := h.uc.Create(r.Context(), eventID, userID, entity.ParticipantRoleParticipant)
 	if err != nil {
@@ -52,7 +55,6 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GetByEvent
 func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
@@ -83,7 +85,6 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(resp)
 }
 
-// MarkGiftSent
 func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -101,7 +102,6 @@ func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 }
 
-// Delete
 func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)

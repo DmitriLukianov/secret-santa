@@ -10,6 +10,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase" // ← публичный интерфейс
 )
 
@@ -23,16 +24,17 @@ func NewEventHandler(uc usecase.EventUseCase) *EventHandler {
 
 // CreateEvent — создаёт событие (организатор берётся из JWT позже)
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
-	var req request.CreateEventRequest
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 
+	var req request.CreateEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	// TODO: organizerID будем брать из middleware (auth context)
-	// Пока для теста берём первый UUID или передаём вручную
-	organizerID := uuid.MustParse("00000000-0000-0000-0000-000000000000") // ← заменишь позже
 
 	input := dto.CreateEventInput{
 		Title:           req.Title,
@@ -45,7 +47,7 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		MaxParticipants: req.MaxParticipants,
 	}
 
-	event, err := h.uc.Create(r.Context(), input, organizerID)
+	event, err := h.uc.Create(r.Context(), input, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
