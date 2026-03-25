@@ -7,6 +7,7 @@ import (
 
 	"secret-santa-backend/internal/entity"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -18,11 +19,11 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// CREATE — сохраняет пользователя с oauth_id
+// Create — сохраняет пользователя (используется в auth usecase)
 func (r *Repository) Create(ctx context.Context, user entity.User) error {
 	query := `
-		INSERT INTO users (id, name, email, oauth_id)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO users (id, name, email, oauth_id, oauth_provider, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
 	_, err := r.db.Exec(ctx, query,
@@ -30,63 +31,69 @@ func (r *Repository) Create(ctx context.Context, user entity.User) error {
 		user.Name,
 		user.Email,
 		user.OAuthID,
+		user.OAuthProvider,
+		user.CreatedAt,
+		user.UpdatedAt,
 	)
-
 	return err
 }
 
-func (r *Repository) GetByID(ctx context.Context, id string) (*entity.User, error) {
+// GetByID — теперь id = uuid.UUID
+func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
 	query := `
-		SELECT id, name, email, oauth_id, created_at
+		SELECT id, name, email, oauth_id, oauth_provider, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
 
 	row := r.db.QueryRow(ctx, query, id)
 
-	var user entity.User
+	var u entity.User
 	err := row.Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.OAuthID,
-		&user.CreatedAt,
+		&u.ID,
+		&u.Name,
+		&u.Email,
+		&u.OAuthID,
+		&u.OAuthProvider,
+		&u.CreatedAt,
+		&u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-
-	return &user, nil
+	return &u, nil
 }
 
-// GetByOAuthID — поиск пользователя по идентификатору OAuth-провайдера (GitHub id)
-func (r *Repository) GetByOAuthID(ctx context.Context, oauthID string) (*entity.User, error) {
+// GetByOAuthID — поиск по паре (oauth_id + oauth_provider)
+func (r *Repository) GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error) {
 	query := `
-		SELECT id, name, email, oauth_id, created_at
+		SELECT id, name, email, oauth_id, oauth_provider, created_at, updated_at
 		FROM users
-		WHERE oauth_id = $1
+		WHERE oauth_id = $1 AND oauth_provider = $2
 	`
 
-	row := r.db.QueryRow(ctx, query, oauthID)
+	row := r.db.QueryRow(ctx, query, oauthID, oauthProvider)
 
-	var user entity.User
+	var u entity.User
 	err := row.Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.OAuthID,
-		&user.CreatedAt,
+		&u.ID,
+		&u.Name,
+		&u.Email,
+		&u.OAuthID,
+		&u.OAuthProvider,
+		&u.CreatedAt,
+		&u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
-
-	return &user, nil
+	return &u, nil
 }
 
+// GetAll
 func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
 	query := `
-		SELECT id, name, email, oauth_id, created_at
+		SELECT id, name, email, oauth_id, oauth_provider, created_at, updated_at
 		FROM users
 	`
 
@@ -97,28 +104,27 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
 	defer rows.Close()
 
 	var users []entity.User
-
 	for rows.Next() {
 		var u entity.User
-
 		if err := rows.Scan(
 			&u.ID,
 			&u.Name,
 			&u.Email,
 			&u.OAuthID,
+			&u.OAuthProvider,
 			&u.CreatedAt,
+			&u.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
-
 		users = append(users, u)
 	}
-
 	return users, nil
 }
 
-func (r *Repository) Update(ctx context.Context, id string, name, email *string) error {
-	query := "UPDATE users SET "
+// Update — partial update
+func (r *Repository) Update(ctx context.Context, id uuid.UUID, name, email *string) error {
+	query := "UPDATE users SET updated_at = NOW(), "
 	args := []interface{}{}
 	argID := 1
 
@@ -127,7 +133,6 @@ func (r *Repository) Update(ctx context.Context, id string, name, email *string)
 		args = append(args, *name)
 		argID++
 	}
-
 	if email != nil {
 		query += "email = $" + strconv.Itoa(argID) + ", "
 		args = append(args, *email)
@@ -146,34 +151,35 @@ func (r *Repository) Update(ctx context.Context, id string, name, email *string)
 	return err
 }
 
-func (r *Repository) Delete(ctx context.Context, id string) error {
+// Delete
+func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `DELETE FROM users WHERE id = $1`
-
 	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
 
+// GetByEmail
 func (r *Repository) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
 	query := `
-		SELECT id, name, email, oauth_id, created_at
+		SELECT id, name, email, oauth_id, oauth_provider, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`
 
 	row := r.db.QueryRow(ctx, query, email)
 
-	var user entity.User
+	var u entity.User
 	err := row.Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.OAuthID,
-		&user.CreatedAt,
+		&u.ID,
+		&u.Name,
+		&u.Email,
+		&u.OAuthID,
+		&u.OAuthProvider,
+		&u.CreatedAt,
+		&u.UpdatedAt,
 	)
-
 	if err != nil {
 		return nil, err
 	}
-
-	return &user, nil
+	return &u, nil
 }

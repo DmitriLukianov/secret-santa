@@ -1,85 +1,75 @@
+-- +goose Up
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- ==================== USERS ====================
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    oauth_id TEXT UNIQUE NOT NULL DEFAULT '',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            TEXT NOT NULL,
+    email           TEXT UNIQUE NOT NULL,
+    oauth_id        TEXT UNIQUE NOT NULL DEFAULT '',
+    oauth_provider  TEXT NOT NULL DEFAULT '',
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE INDEX IF NOT EXISTS idx_users_oauth ON users(oauth_id, oauth_provider);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- ==================== EVENTS ====================
 CREATE TABLE events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    description TEXT,
-    organizer_id UUID NOT NULL,
-    start_date TIMESTAMP,
-    draw_date TIMESTAMP,
-    end_date TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            TEXT NOT NULL,
+    description     TEXT,
+    rules           TEXT,
+    recommendations TEXT,
+    organizer_id    UUID NOT NULL,
+    start_date      TIMESTAMPTZ,
+    draw_date       TIMESTAMPTZ,
+    end_date        TIMESTAMPTZ,
+    status          TEXT NOT NULL DEFAULT 'draft',
+    max_participants INT NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now(),
 
-    CONSTRAINT fk_events_user
-        FOREIGN KEY (organizer_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE
+    CONSTRAINT fk_events_organizer FOREIGN KEY (organizer_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-
+-- ==================== PARTICIPANTS ====================
 CREATE TABLE participants (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id UUID NOT NULL,
-    user_id UUID NOT NULL,
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id   UUID NOT NULL,
+    user_id    UUID NOT NULL,
+    role       TEXT NOT NULL DEFAULT 'participant',
+    gift_sent  BOOLEAN NOT NULL DEFAULT false,
+    gift_sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
 
-    CONSTRAINT fk_participants_event
-        FOREIGN KEY (event_id)
-        REFERENCES events(id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT fk_participants_user
-        FOREIGN KEY (user_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
+    CONSTRAINT fk_participants_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+    CONSTRAINT fk_participants_user  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT unique_event_user UNIQUE (event_id, user_id)
 );
 
+-- ==================== ASSIGNMENTS ====================
 CREATE TABLE assignments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id UUID NOT NULL,
-    giver_id UUID NOT NULL,
-    receiver_id UUID NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id     UUID NOT NULL,
+    giver_id     UUID NOT NULL,
+    receiver_id  UUID NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT now(),
 
-    CONSTRAINT fk_assignments_event
-        FOREIGN KEY (event_id)
-        REFERENCES events(id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT fk_assignments_giver
-        FOREIGN KEY (giver_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT fk_assignments_receiver
-        FOREIGN KEY (receiver_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
+    CONSTRAINT fk_assignments_event    FOREIGN KEY (event_id)    REFERENCES events(id)    ON DELETE CASCADE,
+    CONSTRAINT fk_assignments_giver    FOREIGN KEY (giver_id)    REFERENCES users(id)    ON DELETE CASCADE,
+    CONSTRAINT fk_assignments_receiver FOREIGN KEY (receiver_id) REFERENCES users(id)    ON DELETE CASCADE,
     CONSTRAINT unique_event_giver UNIQUE (event_id, giver_id)
 );
 
+-- ==================== WISHLISTS ====================
 CREATE TABLE wishlists (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT,
-    link TEXT,
-    image_url TEXT,
-    visibility TEXT DEFAULT 'private',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    participant_id UUID NOT NULL,           -- привязка к участнику события
+    visibility    TEXT NOT NULL DEFAULT 'santa_only',
+    created_at    TIMESTAMPTZ DEFAULT now(),
+    updated_at    TIMESTAMPTZ DEFAULT now(),
 
-    CONSTRAINT fk_wishlist_user
-        FOREIGN KEY (user_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE
+    CONSTRAINT fk_wishlist_participant FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE
 );

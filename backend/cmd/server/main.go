@@ -26,6 +26,7 @@ import (
 	userusecase "secret-santa-backend/internal/usecase/user"
 	wishlistusecase "secret-santa-backend/internal/usecase/wishlist"
 
+	// ← новый импорт (для UserUseCase)
 	"log/slog"
 	v1 "secret-santa-backend/internal/controller/http/v1"
 )
@@ -69,19 +70,25 @@ func main() {
 
 	logger := slog.Default()
 
+	// ==================== REPOSITORIES ====================
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
 	participantRepo := participantrepo.New(db)
 	assignmentRepo := assignmentrepo.New(db)
 	wishlistRepo := wishlistrepo.New(db)
 
-	userUC := userusecase.New(userRepo)
+	// ==================== USECASES ====================
+	userUC := userusecase.New(userRepo) // ← user usecase
+
+	// Важное изменение ↓↓↓
+	authUC := authusecase.New(userUC) // ← теперь передаём userUC (интерфейс), а не repo!
+
 	eventUC := eventusecase.New(eventRepo, logger)
 	participantUC := participantusecase.New(participantRepo)
 	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo)
 	wishlistUC := wishlistusecase.New(wishlistRepo)
-	authUC := authusecase.New(userRepo)
 
+	// ==================== HANDLERS ====================
 	userHandler := v1.NewUserHandler(userUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)

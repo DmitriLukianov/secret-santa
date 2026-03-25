@@ -1,3 +1,4 @@
+-- +goose Down
 DROP TABLE IF EXISTS wishlists;
 DROP TABLE IF EXISTS assignments;
 DROP TABLE IF EXISTS participants;
