@@ -26,6 +26,7 @@ type EventUseCase interface {
 	GetAll(ctx context.Context) ([]entity.Event, error)
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	Finish(ctx context.Context, id, userID uuid.UUID) error
 }
 
 // ParticipantUseCase — публичный интерфейс участников
@@ -35,6 +36,7 @@ type ParticipantUseCase interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
 	MarkGiftSent(ctx context.Context, participantID uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error)
 }
 
 // WishlistUseCase — публичный интерфейс вишлистов
@@ -43,12 +45,13 @@ type WishlistUseCase interface {
 	AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error)
 	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
+	GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error)
 }
 
 // AssignmentUseCase — публичный интерфейс жеребьёвки
 type AssignmentUseCase interface {
-	Draw(ctx context.Context, eventID uuid.UUID) error
-	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
+	Draw(ctx context.Context, eventID, userID uuid.UUID) error
+	GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) // ← исправлено
 }
 
 // ParticipantRepository — минимальный интерфейс, который нужен AssignmentUseCase

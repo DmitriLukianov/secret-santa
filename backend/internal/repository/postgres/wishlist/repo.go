@@ -17,7 +17,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// CreateWishlist
 func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
 	query := `
 		INSERT INTO wishlists (id, participant_id, visibility, created_at, updated_at)
@@ -30,7 +29,6 @@ func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
 	return err
 }
 
-// CreateItem
 func (r *Repository) CreateItem(ctx context.Context, item entity.WishlistItem) error {
 	query := `
 		INSERT INTO wishlist_items (id, wishlist_id, title, link, image_url, comment, created_at)
@@ -43,7 +41,6 @@ func (r *Repository) CreateItem(ctx context.Context, item entity.WishlistItem) e
 	return err
 }
 
-// GetByParticipant
 func (r *Repository) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
 	query := `
 		SELECT id, participant_id, visibility, created_at, updated_at
@@ -54,7 +51,6 @@ func (r *Repository) GetByParticipant(ctx context.Context, participantID uuid.UU
 	return ScanWishlist(row)
 }
 
-// GetItems
 func (r *Repository) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error) {
 	query := `
 		SELECT id, wishlist_id, title, link, image_url, comment, created_at

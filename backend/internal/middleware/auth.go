@@ -31,7 +31,6 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		// Убираем "Bearer "
 		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenStr == authHeader {
 			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
@@ -50,13 +49,11 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		// Кладём user_id в контекст
 		ctx := context.WithValue(r.Context(), UserIDKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// GetUserID — удобный хелпер для контроллеров
 func GetUserID(r *http.Request) (uuid.UUID, error) {
 	val := r.Context().Value(UserIDKey)
 	if val == nil {

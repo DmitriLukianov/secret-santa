@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -19,8 +20,14 @@ func NewAssignmentHandler(uc usecase.AssignmentUseCase) *AssignmentHandler {
 	return &AssignmentHandler{uc: uc}
 }
 
-// Draw — запускает жеребьёвку
 func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
+
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
@@ -28,8 +35,12 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.uc.Draw(r.Context(), eventID)
+	err = h.uc.Draw(r.Context(), eventID, userID)
 	if err != nil {
+		if err.Error() == "only the event organizer can start the draw" {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -40,8 +51,13 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetByEvent — показывает результаты жеребьёвки
 func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
@@ -49,7 +65,7 @@ func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assignments, err := h.uc.GetByEvent(r.Context(), eventID)
+	assignments, err := h.uc.GetByEvent(r.Context(), eventID, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

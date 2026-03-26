@@ -17,7 +17,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// Create
 func (r *Repository) Create(ctx context.Context, a entity.Assignment) error {
 	query := `
 		INSERT INTO assignments (id, event_id, giver_id, receiver_id, created_at)
@@ -30,7 +29,6 @@ func (r *Repository) Create(ctx context.Context, a entity.Assignment) error {
 	return err
 }
 
-// GetByEvent
 func (r *Repository) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error) {
 	query := `
 		SELECT id, event_id, giver_id, receiver_id, created_at
@@ -46,7 +44,6 @@ func (r *Repository) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entit
 	return ScanAssignments(rows)
 }
 
-// DeleteByEvent (для пересоздания жеребьёвки)
 func (r *Repository) DeleteByEvent(ctx context.Context, eventID uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM assignments WHERE event_id = $1`, eventID)
 	return err

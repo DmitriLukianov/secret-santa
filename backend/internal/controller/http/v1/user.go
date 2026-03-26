@@ -10,18 +10,17 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/dto"
-	"secret-santa-backend/internal/usecase" // ← публичный интерфейс UserUseCase
+	"secret-santa-backend/internal/usecase"
 )
 
 type UserHandler struct {
-	uc usecase.UserUseCase // ← теперь используем интерфейс из contracts.go
+	uc usecase.UserUseCase
 }
 
 func NewUserHandler(uc usecase.UserUseCase) *UserHandler {
 	return &UserHandler{uc: uc}
 }
 
-// CreateUser — теперь передаём все обязательные поля (OAuthID + OAuthProvider)
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req request.CreateUserRequest
 
@@ -33,11 +32,11 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	input := dto.CreateUserInput{
 		Name:          req.Name,
 		Email:         req.Email,
-		OAuthID:       req.OAuthID,       // ← добавлено
-		OAuthProvider: req.OAuthProvider, // ← добавлено
+		OAuthID:       req.OAuthID,
+		OAuthProvider: req.OAuthProvider,
 	}
 
-	_, err := h.uc.Create(r.Context(), input) // ← теперь возвращает entity.User
+	_, err := h.uc.Create(r.Context(), input)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -46,7 +45,6 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
-// GetUserByID — теперь используем GetByID + uuid
 func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -62,7 +60,7 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := response.UserResponse{
-		ID:    user.ID.String(), // ← uuid → string для JSON
+		ID:    user.ID.String(),
 		Name:  user.Name,
 		Email: user.Email,
 	}
@@ -70,7 +68,6 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GetUsers
 func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.uc.GetAll(r.Context())
 	if err != nil {
@@ -90,7 +87,6 @@ func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// UpdateUser
 func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -119,7 +115,6 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// DeleteUser
 func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)

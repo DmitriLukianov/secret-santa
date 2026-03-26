@@ -19,7 +19,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// Create — сохраняет пользователя (используется в auth usecase)
 func (r *Repository) Create(ctx context.Context, user entity.User) error {
 	query := `
 		INSERT INTO users (id, name, email, oauth_id, oauth_provider, created_at, updated_at)
@@ -38,7 +37,6 @@ func (r *Repository) Create(ctx context.Context, user entity.User) error {
 	return err
 }
 
-// GetByID — теперь id = uuid.UUID
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
 	query := `
 		SELECT id, name, email, oauth_id, oauth_provider, created_at, updated_at
@@ -64,7 +62,6 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, e
 	return &u, nil
 }
 
-// GetByOAuthID — поиск по паре (oauth_id + oauth_provider)
 func (r *Repository) GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error) {
 	query := `
 		SELECT id, name, email, oauth_id, oauth_provider, created_at, updated_at
@@ -90,7 +87,6 @@ func (r *Repository) GetByOAuthID(ctx context.Context, oauthID, oauthProvider st
 	return &u, nil
 }
 
-// GetAll
 func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
 	query := `
 		SELECT id, name, email, oauth_id, oauth_provider, created_at, updated_at
@@ -122,7 +118,6 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
 	return users, nil
 }
 
-// Update — partial update
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, name, email *string) error {
 	query := "UPDATE users SET updated_at = NOW(), "
 	args := []interface{}{}
@@ -151,14 +146,12 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, name, email *stri
 	return err
 }
 
-// Delete
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `DELETE FROM users WHERE id = $1`
 	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
 
-// GetByEmail
 func (r *Repository) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
 	query := `
 		SELECT id, name, email, oauth_id, oauth_provider, created_at, updated_at

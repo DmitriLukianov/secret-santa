@@ -20,7 +20,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// Create
 func (r *Repository) Create(ctx context.Context, e entity.Event) error {
 	query := `
 		INSERT INTO events (
@@ -38,7 +37,6 @@ func (r *Repository) Create(ctx context.Context, e entity.Event) error {
 	return err
 }
 
-// GetByID
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	query := `
 		SELECT id, title, description, rules, recommendations, organizer_id,
@@ -48,10 +46,9 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, 
 	`
 
 	row := r.db.QueryRow(ctx, query, id)
-	return ScanEvent(row) // ← прямой вызов (без mapper.)
+	return ScanEvent(row)
 }
 
-// GetAll
 func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	query := `
 		SELECT id, title, description, rules, recommendations, organizer_id,
@@ -64,12 +61,11 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() // ← исправлено
+	defer rows.Close()
 
-	return ScanEvents(rows) // ← прямой вызов (без mapper.)
+	return ScanEvents(rows)
 }
 
-// Update
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
 	query := "UPDATE events SET updated_at = NOW(), "
 	args := []interface{}{}
@@ -133,7 +129,6 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateE
 	return err
 }
 
-// Delete
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM events WHERE id = $1`, id)
 	return err

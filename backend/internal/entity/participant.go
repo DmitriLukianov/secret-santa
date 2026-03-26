@@ -6,19 +6,17 @@ import (
 	"github.com/google/uuid"
 )
 
-// Participant — участник события «Тайный Санта»
 type Participant struct {
 	ID         uuid.UUID  `db:"id"`
 	EventID    uuid.UUID  `db:"event_id"`
 	UserID     uuid.UUID  `db:"user_id"`
-	Role       string     `db:"role"` // "organizer" | "participant"
+	Role       string     `db:"role"`
 	GiftSent   bool       `db:"gift_sent"`
 	GiftSentAt *time.Time `db:"gift_sent_at"`
 	CreatedAt  time.Time  `db:"created_at"`
 	UpdatedAt  time.Time  `db:"updated_at"`
 }
 
-// NewParticipant — конструктор
 func NewParticipant(eventID, userID uuid.UUID, role string) Participant {
 	now := time.Now()
 	return Participant{
@@ -32,7 +30,6 @@ func NewParticipant(eventID, userID uuid.UUID, role string) Participant {
 	}
 }
 
-// Константы ролей (можно позже вынести в definitions/constants.go)
 const (
 	ParticipantRoleOrganizer   = "organizer"
 	ParticipantRoleParticipant = "participant"

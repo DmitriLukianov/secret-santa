@@ -3,6 +3,7 @@ package v1
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -14,11 +15,15 @@ import (
 )
 
 type WishlistHandler struct {
-	uc usecase.WishlistUseCase
+	uc            usecase.WishlistUseCase
+	participantUC usecase.ParticipantUseCase
 }
 
-func NewWishlistHandler(uc usecase.WishlistUseCase) *WishlistHandler {
-	return &WishlistHandler{uc: uc}
+func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.ParticipantUseCase) *WishlistHandler {
+	return &WishlistHandler{
+		uc:            uc,
+		participantUC: participantUC,
+	}
 }
 
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +39,13 @@ func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wishlist, err := h.uc.Create(r.Context(), userID, req.Visibility)
+	participant, err := h.participantUC.GetByUserAndEvent(r.Context(), userID, uuid.MustParse(req.EventID))
+	if err != nil {
+		http.Error(w, "participant not found for this event", http.StatusBadRequest)
+		return
+	}
+
+	wishlist, err := h.uc.Create(r.Context(), participant.ID, req.Visibility)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -67,7 +78,14 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.uc.AddItem(r.Context(), wishlistID, req.Title, req.Link, req.ImageURL, req.Comment)
+	item, err := h.uc.AddItem(
+		r.Context(),
+		wishlistID,
+		req.Title,
+		&req.Link,
+		&req.ImageURL,
+		&req.Comment,
+	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -94,9 +112,31 @@ func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wishlist, err := h.uc.GetByParticipant(r.Context(), userID)
+	eventIDStr := r.URL.Query().Get("eventId")
+	if eventIDStr == "" {
+		http.Error(w, "eventId query parameter is required (example: ?eventId=xxx)", http.StatusBadRequest)
+		return
+	}
+
+	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, "invalid eventId", http.StatusBadRequest)
+		return
+	}
+
+	participant, err := h.participantUC.GetByUserAndEvent(r.Context(), userID, eventID)
+	if err != nil {
+		http.Error(w, "participant not found for this event", http.StatusNotFound)
+		return
+	}
+
+	wishlist, err := h.uc.GetForUser(r.Context(), eventID, participant.ID, userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "you are not the santa") {
+			http.Error(w, "you are not the santa for this participant", http.StatusForbidden)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

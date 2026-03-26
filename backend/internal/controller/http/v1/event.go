@@ -3,6 +3,7 @@ package v1
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -11,7 +12,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/middleware"
-	"secret-santa-backend/internal/usecase" // ← публичный интерфейс
+	"secret-santa-backend/internal/usecase"
 )
 
 type EventHandler struct {
@@ -22,7 +23,6 @@ func NewEventHandler(uc usecase.EventUseCase) *EventHandler {
 	return &EventHandler{uc: uc}
 }
 
-// CreateEvent — создаёт событие (организатор берётся из JWT позже)
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
@@ -63,7 +63,7 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		StartDate:       event.StartDate,
 		DrawDate:        event.DrawDate,
 		EndDate:         event.EndDate,
-		Status:          event.Status,
+		Status:          string(event.Status),
 		MaxParticipants: event.MaxParticipants,
 		CreatedAt:       event.CreatedAt,
 		UpdatedAt:       event.UpdatedAt,
@@ -74,7 +74,6 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GetEventByID
 func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -99,7 +98,7 @@ func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 		StartDate:       event.StartDate,
 		DrawDate:        event.DrawDate,
 		EndDate:         event.EndDate,
-		Status:          event.Status,
+		Status:          string(event.Status),
 		MaxParticipants: event.MaxParticipants,
 		CreatedAt:       event.CreatedAt,
 		UpdatedAt:       event.UpdatedAt,
@@ -109,7 +108,6 @@ func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// GetEvents
 func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	events, err := h.uc.GetAll(r.Context())
 	if err != nil {
@@ -129,7 +127,7 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 			StartDate:       e.StartDate,
 			DrawDate:        e.DrawDate,
 			EndDate:         e.EndDate,
-			Status:          e.Status,
+			Status:          string(e.Status),
 			MaxParticipants: e.MaxParticipants,
 			CreatedAt:       e.CreatedAt,
 			UpdatedAt:       e.UpdatedAt,
@@ -140,7 +138,6 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// UpdateEvent
 func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -176,7 +173,6 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// DeleteEvent
 func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -192,4 +188,35 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *EventHandler) FinishEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid event id", http.StatusBadRequest)
+		return
+	}
+
+	err = h.uc.Finish(r.Context(), id, userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "organizer") {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Событие успешно завершено",
+	})
 }

@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// User — пользователь системы (сотрудник или клиент)
 type User struct {
 	ID            uuid.UUID `db:"id"`
 	Name          string    `db:"name"`
@@ -17,7 +16,6 @@ type User struct {
 	UpdatedAt     time.Time `db:"updated_at"`
 }
 
-// NewUser — фабрика пользователя (используется в usecase/auth)
 func NewUser(name, email, oauthID, oauthProvider string) User {
 	now := time.Now()
 	return User{

@@ -6,7 +6,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// ScanEvent сканирует одну строку из БД в entity.Event
 func ScanEvent(row pgx.Row) (*entity.Event, error) {
 	var e entity.Event
 	err := row.Scan(
@@ -30,7 +29,6 @@ func ScanEvent(row pgx.Row) (*entity.Event, error) {
 	return &e, nil
 }
 
-// ScanEvents сканирует несколько строк
 func ScanEvents(rows pgx.Rows) ([]entity.Event, error) {
 	var events []entity.Event
 	for rows.Next() {

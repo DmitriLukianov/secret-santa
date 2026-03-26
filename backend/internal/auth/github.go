@@ -67,6 +67,6 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 		ID:       strconv.Itoa(ghUser.ID),
 		Name:     name,
 		Email:    email,
-		Provider: "github", // ← теперь всегда передаём провайдер
+		Provider: "github",
 	}, nil
 }

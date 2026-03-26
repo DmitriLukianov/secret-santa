@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/joho/godotenv"
 
 	authpkg "secret-santa-backend/internal/auth"
+	"secret-santa-backend/internal/logger"
 	"secret-santa-backend/internal/middleware"
 
 	postgres "secret-santa-backend/internal/repository/postgres"
@@ -45,19 +47,36 @@ func main() {
 	}
 	defer db.Close()
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET is not set")
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	stage := os.Getenv("APP_ENV")
+	if stage == "" {
+		stage = "local"
 	}
 
-	jwtTTL, err := time.ParseDuration(os.Getenv("JWT_TTL"))
-	if err != nil || jwtTTL == 0 {
+	log := logger.New(logLevel, stage)
+	log.Info("logger initialized",
+		slog.String("level", logLevel),
+		slog.String("stage", stage),
+	)
+
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Error("JWT_SECRET is not set")
+		os.Exit(1)
+	}
+
+	jwtTTL, _ := time.ParseDuration(os.Getenv("JWT_TTL"))
+	if jwtTTL == 0 {
 		jwtTTL = 24 * time.Hour
 	}
 
 	jwtManager, err := authpkg.NewJWTManager(jwtSecret, jwtTTL)
 	if err != nil {
-		log.Fatal("failed to create JWT manager:", err)
+		log.Error("failed to create JWT manager", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
 	provider := authpkg.NewGitHubProvider(
@@ -66,73 +85,68 @@ func main() {
 		os.Getenv("GITHUB_REDIRECT_URL"),
 	)
 
-	// ==================== REPOSITORIES ====================
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
 	participantRepo := participantrepo.New(db)
 	assignmentRepo := assignmentrepo.New(db)
 	wishlistRepo := wishlistrepo.New(db)
 
-	// ==================== USECASES ====================
-	userUC := userusecase.New(userRepo)
+	userUC := userusecase.NewWithLogger(userRepo, log)
 	authUC := authusecase.New(userUC)
 
-	eventUC := eventusecase.New(eventRepo)
-	participantUC := participantusecase.New(participantRepo)
-	wishlistUC := wishlistusecase.New(wishlistRepo)
-	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo)
+	eventUC := eventusecase.NewWithLogger(eventRepo, log)
+	participantUC := participantusecase.NewWithLogger(participantRepo, log)
 
-	// ==================== HANDLERS ====================
+	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventUC, log)
+
+	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, assignmentUC, log)
+
 	userHandler := v1.NewUserHandler(userUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
-	wishlistHandler := v1.NewWishlistHandler(wishlistUC)
+	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	authHandler := v1.NewAuthHandler(provider, jwtManager, authUC)
 
 	r := chi.NewRouter()
 
-	// Public routes
 	r.Get("/auth/login", authHandler.Login)
 	r.Get("/auth/callback", authHandler.Callback)
 
-	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.NewAuthMiddleware(jwtManager).Handler)
 
-		// Users
 		r.Post("/users", userHandler.CreateUser)
 		r.Get("/users", userHandler.GetUsers)
 		r.Get("/users/{id}", userHandler.GetUserByID)
 		r.Put("/users/{id}", userHandler.UpdateUser)
 		r.Delete("/users/{id}", userHandler.DeleteUser)
 
-		// Events
 		r.Post("/events", eventHandler.CreateEvent)
 		r.Get("/events", eventHandler.GetEvents)
 		r.Get("/events/{id}", eventHandler.GetEventByID)
 		r.Put("/events/{id}", eventHandler.UpdateEvent)
 		r.Delete("/events/{id}", eventHandler.DeleteEvent)
+		r.Post("/events/{id}/finish", eventHandler.FinishEvent)
 
-		// Participants
 		r.Post("/events/{eventId}/participants", participantHandler.Add)
 		r.Get("/events/{eventId}/participants", participantHandler.GetByEvent)
 		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
 		r.Delete("/participants/{id}", participantHandler.Delete)
 
-		// Wishlists
 		r.Post("/users/{userId}/wishlist", wishlistHandler.Create)
 		r.Get("/users/{userId}/wishlist", wishlistHandler.GetByUser)
 		r.Post("/wishlists/{wishlistId}/items", wishlistHandler.AddItem)
 		r.Get("/wishlists/{wishlistId}/items", wishlistHandler.GetItems)
 
-		// Assignment (жеребьёвка)
 		r.Post("/events/{eventId}/assign", assignmentHandler.Draw)
 		r.Get("/events/{eventId}/assignments", assignmentHandler.GetByEvent)
 	})
 
-	log.Println("🚀 Server running on :8080")
+	log.Info("🚀 Server running on :8080")
+
 	if err := http.ListenAndServe(":8080", r); err != nil {
-		log.Fatal(err)
+		log.Error("server failed to start", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 }

@@ -14,4 +14,5 @@ type Repository interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
 	UpdateGiftSent(ctx context.Context, id uuid.UUID, sent bool) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error)
 }
