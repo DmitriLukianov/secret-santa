@@ -1,6 +1,9 @@
 package user
 
 import (
+	"errors"
+
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/jackc/pgx/v5"
@@ -18,6 +21,9 @@ func scanUser(row pgx.Row) (*entity.User, error) {
 		&u.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, definitions.ErrUserNotFound
+		}
 		return nil, err
 	}
 	return &u, nil
