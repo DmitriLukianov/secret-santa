@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase"
@@ -25,19 +26,19 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		http.Error(w, "invalid event id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		writeHTTPError(w, err)
 		return
 	}
 
 	participant, err := h.uc.Create(r.Context(), eventID, userID, entity.ParticipantRoleParticipant)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -59,13 +60,13 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		http.Error(w, "invalid event id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	participants, err := h.uc.GetByEvent(r.Context(), eventID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -89,13 +90,13 @@ func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "invalid participant id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	err = h.uc.MarkGiftSent(r.Context(), id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -106,13 +107,13 @@ func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "invalid participant id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	err = h.uc.Delete(r.Context(), id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 

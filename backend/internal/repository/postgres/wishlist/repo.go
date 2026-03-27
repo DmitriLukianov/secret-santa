@@ -18,50 +18,50 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
-	query := `
-		INSERT INTO wishlists (id, participant_id, visibility, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`
+	query := createWishlistQuery().
+		Values(w.ID, w.ParticipantID, w.Visibility, w.CreatedAt, w.UpdatedAt)
 
-	_, err := r.db.Exec(ctx, query,
-		w.ID, w.ParticipantID, w.Visibility, w.CreatedAt, w.UpdatedAt,
-	)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
 	return err
 }
 
 func (r *Repository) CreateItem(ctx context.Context, item entity.WishlistItem) error {
-	query := `
-		INSERT INTO wishlist_items (id, wishlist_id, title, link, image_url, comment, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`
+	query := createWishlistItemQuery().
+		Values(item.ID, item.WishlistID, item.Title, item.Link, item.ImageURL, item.Comment, item.CreatedAt)
 
-	_, err := r.db.Exec(ctx, query,
-		item.ID, item.WishlistID, item.Title, item.Link, item.ImageURL, item.Comment, item.CreatedAt,
-	)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
 	return err
 }
 
 func (r *Repository) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
-	query := `
-		SELECT id, participant_id, visibility, created_at, updated_at
-		FROM wishlists WHERE participant_id = $1
-	`
-
-	row := r.db.QueryRow(ctx, query, participantID)
-	return ScanWishlist(row)
+	query := getWishlistByParticipantQuery(participantID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanWishlist(row)
 }
 
 func (r *Repository) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error) {
-	query := `
-		SELECT id, wishlist_id, title, link, image_url, comment, created_at
-		FROM wishlist_items WHERE wishlist_id = $1
-	`
-
-	rows, err := r.db.Query(ctx, query, wishlistID)
+	query := getWishlistItemsQuery(wishlistID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	return ScanWishlistItems(rows)
+	return scanWishlistItems(rows)
 }

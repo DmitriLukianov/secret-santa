@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func ScanParticipant(row pgx.Row) (*entity.Participant, error) {
+func scanParticipant(row pgx.Row) (*entity.Participant, error) {
 	var p entity.Participant
 	err := row.Scan(
 		&p.ID,
@@ -24,14 +24,24 @@ func ScanParticipant(row pgx.Row) (*entity.Participant, error) {
 	return &p, nil
 }
 
-func ScanParticipants(rows pgx.Rows) ([]entity.Participant, error) {
+func scanParticipants(rows pgx.Rows) ([]entity.Participant, error) {
 	var participants []entity.Participant
 	for rows.Next() {
-		p, err := ScanParticipant(rows)
+		var p entity.Participant
+		err := rows.Scan(
+			&p.ID,
+			&p.EventID,
+			&p.UserID,
+			&p.Role,
+			&p.GiftSent,
+			&p.GiftSentAt,
+			&p.CreatedAt,
+			&p.UpdatedAt,
+		)
 		if err != nil {
 			return nil, err
 		}
-		participants = append(participants, *p)
+		participants = append(participants, p)
 	}
 	return participants, nil
 }

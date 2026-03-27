@@ -2,12 +2,14 @@ package v1
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase"
 )
@@ -24,24 +26,24 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		writeHTTPError(w, err)
 		return
 	}
 
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		http.Error(w, "invalid event id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	err = h.uc.Draw(r.Context(), eventID, userID)
 	if err != nil {
-		if err.Error() == "only the event organizer can start the draw" {
-			http.Error(w, err.Error(), http.StatusForbidden)
+		if errors.Is(err, definitions.ErrNotOrganizer) {
+			writeHTTPError(w, definitions.ErrForbidden)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -54,20 +56,20 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		writeHTTPError(w, err)
 		return
 	}
 
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		http.Error(w, "invalid event id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	assignments, err := h.uc.GetByEvent(r.Context(), eventID, userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 

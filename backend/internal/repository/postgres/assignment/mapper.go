@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func ScanAssignment(row pgx.Row) (*entity.Assignment, error) {
+func scanAssignment(row pgx.Row) (*entity.Assignment, error) {
 	var a entity.Assignment
 	err := row.Scan(
 		&a.ID,
@@ -21,14 +21,21 @@ func ScanAssignment(row pgx.Row) (*entity.Assignment, error) {
 	return &a, nil
 }
 
-func ScanAssignments(rows pgx.Rows) ([]entity.Assignment, error) {
+func scanAssignments(rows pgx.Rows) ([]entity.Assignment, error) {
 	var assignments []entity.Assignment
 	for rows.Next() {
-		a, err := ScanAssignment(rows)
+		var a entity.Assignment
+		err := rows.Scan(
+			&a.ID,
+			&a.EventID,
+			&a.GiverID,
+			&a.ReceiverID,
+			&a.CreatedAt,
+		)
 		if err != nil {
 			return nil, err
 		}
-		assignments = append(assignments, *a)
+		assignments = append(assignments, a)
 	}
 	return assignments, nil
 }

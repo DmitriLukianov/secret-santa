@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"secret-santa-backend/internal/definitions"
+
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
@@ -180,7 +182,7 @@ func (uc *UseCase) Finish(ctx context.Context, id, userID uuid.UUID) error {
 				slog.String("organizer_id", event.OrganizerID.String()),
 			)
 		}
-		return fmt.Errorf("only the event organizer can finish the event")
+		return definitions.ErrNotOrganizer
 	}
 
 	if !event.CanBeFinished() {
@@ -190,7 +192,7 @@ func (uc *UseCase) Finish(ctx context.Context, id, userID uuid.UUID) error {
 				slog.String("status", string(event.Status)),
 			)
 		}
-		return fmt.Errorf("event cannot be finished in current status: %s", event.Status)
+		return definitions.ErrInvalidEventState
 	}
 
 	event.MarkAsFinished()

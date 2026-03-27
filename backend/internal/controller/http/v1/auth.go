@@ -6,6 +6,7 @@ import (
 	"time"
 
 	authpkg "secret-santa-backend/internal/auth"
+	"secret-santa-backend/internal/definitions"
 	authuc "secret-santa-backend/internal/usecase/auth"
 )
 
@@ -35,31 +36,31 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "code not found", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidOAuthCode)
 		return
 	}
 
 	token, err := h.provider.Config().Exchange(ctx, code)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
 	user, err := h.provider.GetUserInfo(ctx, token)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
 	userID, err := h.uc.LoginWithOAuth(ctx, user)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
 	jwtToken, err := h.jwt.GenerateToken(userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 

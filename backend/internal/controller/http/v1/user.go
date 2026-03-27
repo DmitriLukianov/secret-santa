@@ -9,6 +9,7 @@ import (
 
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/usecase"
 )
@@ -25,7 +26,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req request.CreateUserRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -38,7 +39,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.uc.Create(r.Context(), input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -49,13 +50,13 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "invalid user id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	user, err := h.uc.GetByID(r.Context(), id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -71,7 +72,7 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.uc.GetAll(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -91,13 +92,13 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "invalid user id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	var req request.UpdateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -108,7 +109,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	err = h.uc.Update(r.Context(), id, input)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -119,13 +120,13 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		http.Error(w, "invalid user id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	err = h.uc.Delete(r.Context(), id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 

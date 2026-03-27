@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func ScanWishlist(row pgx.Row) (*entity.Wishlist, error) {
+func scanWishlist(row pgx.Row) (*entity.Wishlist, error) {
 	var w entity.Wishlist
 	err := row.Scan(
 		&w.ID,
@@ -21,7 +21,7 @@ func ScanWishlist(row pgx.Row) (*entity.Wishlist, error) {
 	return &w, nil
 }
 
-func ScanWishlistItems(rows pgx.Rows) ([]entity.WishlistItem, error) {
+func scanWishlistItems(rows pgx.Rows) ([]entity.WishlistItem, error) {
 	var items []entity.WishlistItem
 	for rows.Next() {
 		var item entity.WishlistItem

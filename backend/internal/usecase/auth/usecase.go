@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"secret-santa-backend/internal/definitions"
+
 	internalauth "secret-santa-backend/internal/auth"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/usecase"
@@ -21,7 +23,7 @@ func New(userUC usecase.UserUseCase) *UseCase {
 // LoginWithOAuth — основная логика входа через OAuth
 func (uc *UseCase) LoginWithOAuth(ctx context.Context, info internalauth.UserInfo) (string, error) {
 	if info.ID == "" {
-		return "", errors.New("oauth provider returned empty user id")
+		return "", definitions.ErrMissingOAuthCode
 	}
 
 	// 1. Сначала ищем существующего пользователя по oauth_provider + oauth_id
@@ -29,6 +31,9 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info internalauth.UserInf
 	if err == nil && user != nil {
 		// Пользователь уже есть — возвращаем его ID
 		return user.ID.String(), nil
+	}
+	if err != nil && !errors.Is(err, definitions.ErrUserNotFound) {
+		return "", fmt.Errorf("failed to lookup oauth user: %w", err)
 	}
 
 	// 2. Если не нашли — создаём нового

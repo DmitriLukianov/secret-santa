@@ -2,14 +2,15 @@ package v1
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase"
 )
@@ -29,25 +30,31 @@ func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.Partic
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		writeHTTPError(w, err)
 		return
 	}
 
 	var req request.CreateWishlistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeHTTPError(w, err)
 		return
 	}
 
-	participant, err := h.participantUC.GetByUserAndEvent(r.Context(), userID, uuid.MustParse(req.EventID))
+	eventID, err := uuid.Parse(req.EventID)
 	if err != nil {
-		http.Error(w, "participant not found for this event", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	participant, err := h.participantUC.GetByUserAndEvent(r.Context(), userID, eventID)
+	if err != nil {
+		writeHTTPError(w, err)
 		return
 	}
 
 	wishlist, err := h.uc.Create(r.Context(), participant.ID, req.Visibility)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -68,13 +75,13 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)
 	if err != nil {
-		http.Error(w, "invalid wishlist id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	var req request.CreateWishlistItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -87,7 +94,7 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		&req.Comment,
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
@@ -108,35 +115,35 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		writeHTTPError(w, err)
 		return
 	}
 
 	eventIDStr := r.URL.Query().Get("eventId")
 	if eventIDStr == "" {
-		http.Error(w, "eventId query parameter is required (example: ?eventId=xxx)", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		http.Error(w, "invalid eventId", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	participant, err := h.participantUC.GetByUserAndEvent(r.Context(), userID, eventID)
 	if err != nil {
-		http.Error(w, "participant not found for this event", http.StatusNotFound)
+		writeHTTPError(w, err)
 		return
 	}
 
 	wishlist, err := h.uc.GetForUser(r.Context(), eventID, participant.ID, userID)
 	if err != nil {
-		if strings.Contains(err.Error(), "you are not the santa") {
-			http.Error(w, "you are not the santa for this participant", http.StatusForbidden)
+		if errors.Is(err, definitions.ErrNotSanta) {
+			writeHTTPError(w, definitions.ErrForbidden)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
@@ -156,13 +163,13 @@ func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)
 	if err != nil {
-		http.Error(w, "invalid wishlist id", http.StatusBadRequest)
+		writeHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	items, err := h.uc.GetItems(r.Context(), wishlistID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeHTTPError(w, err)
 		return
 	}
 
