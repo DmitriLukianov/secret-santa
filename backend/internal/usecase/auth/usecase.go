@@ -3,46 +3,53 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
+
+	"secret-santa-backend/internal/definitions"
 
 	internalauth "secret-santa-backend/internal/auth"
-	"secret-santa-backend/internal/entity"
-
-	"github.com/google/uuid"
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/usecase"
 )
 
 type UseCase struct {
-	userRepo UserRepository
+	userUC usecase.UserUseCase
 }
 
-func New(userRepo UserRepository) *UseCase {
-	return &UseCase{userRepo: userRepo}
+func New(userUC usecase.UserUseCase) *UseCase {
+	return &UseCase{userUC: userUC}
 }
 
-// LoginWithOAuth — найти пользователя по oauth_id или создать нового.
-// Возвращает userID (UUID строкой).
+// LoginWithOAuth — основная логика входа через OAuth
 func (uc *UseCase) LoginWithOAuth(ctx context.Context, info internalauth.UserInfo) (string, error) {
 	if info.ID == "" {
-		return "", errors.New("oauth provider returned empty user id")
+		return "", definitions.ErrMissingOAuthCode
 	}
 
-	// 1. Пробуем найти существующего пользователя по OAuthID
-	existing, err := uc.userRepo.GetByOAuthID(ctx, info.ID)
-	if err == nil && existing != nil {
-		// пользователь уже есть — возвращаем его ID
-		return existing.ID, nil
+	// 1. Сначала ищем существующего пользователя по oauth_provider + oauth_id
+	user, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
+	if err == nil && user != nil {
+		// Пользователь уже есть — возвращаем его ID
+		return user.ID.String(), nil
+	}
+	if err != nil && !errors.Is(err, definitions.ErrUserNotFound) {
+		return "", fmt.Errorf("failed to lookup oauth user: %w", err)
 	}
 
 	// 2. Если не нашли — создаём нового
-	newUser := entity.User{
-		ID:      uuid.NewString(),
-		Name:    info.Name,
-		Email:   info.Email,
-		OAuthID: info.ID,
+	createInput := dto.CreateUserInput{
+		Name:          info.Name,
+		Email:         info.Email,
+		OAuthID:       info.ID,
+		OAuthProvider: info.Provider,
 	}
 
-	if err := uc.userRepo.Create(ctx, newUser); err != nil {
-		return "", err
+	// Создаём пользователя и сразу получаем реальный сохранённый объект
+	newUser, err := uc.userUC.Create(ctx, createInput)
+	if err != nil {
+		return "", fmt.Errorf("failed to create user: %w", err)
 	}
 
-	return newUser.ID, nil
+	// Возвращаем ID реально сохранённого пользователя
+	return newUser.ID.String(), nil
 }

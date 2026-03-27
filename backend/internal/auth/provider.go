@@ -7,9 +7,10 @@ import (
 )
 
 type UserInfo struct {
-	ID    string
-	Email string
-	Name  string
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Provider string `json:"provider"`
 }
 
 type Provider interface {

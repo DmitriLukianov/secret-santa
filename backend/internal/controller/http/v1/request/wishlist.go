@@ -1,9 +1,13 @@
 package request
 
-type WishlistRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Link        string `json:"link"`
-	ImageURL    string `json:"image_url"`
-	Visibility  string `json:"visibility"`
+type CreateWishlistRequest struct {
+	EventID    string `json:"eventId" validate:"required,uuid"`
+	Visibility string `json:"visibility" validate:"required,oneof=public santa_only"`
+}
+
+type CreateWishlistItemRequest struct {
+	Title    string `json:"title" validate:"required"`
+	Link     string `json:"link,omitempty"`
+	ImageURL string `json:"imageURL,omitempty"`
+	Comment  string `json:"comment,omitempty"`
 }

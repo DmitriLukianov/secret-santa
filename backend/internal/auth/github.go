@@ -42,30 +42,31 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 	}
 	defer resp.Body.Close()
 
-	var user struct {
+	var ghUser struct {
 		ID    int    `json:"id"`
 		Name  string `json:"name"`
 		Email string `json:"email"`
 		Login string `json:"login"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&ghUser); err != nil {
 		return UserInfo{}, err
 	}
 
-	name := user.Name
+	name := ghUser.Name
 	if name == "" {
-		name = user.Login
+		name = ghUser.Login
 	}
 
-	email := user.Email
+	email := ghUser.Email
 	if email == "" {
-		email = strconv.Itoa(user.ID) + "@github.local"
+		email = strconv.Itoa(ghUser.ID) + "@github.local"
 	}
 
 	return UserInfo{
-		ID:    strconv.Itoa(user.ID),
-		Name:  name,
-		Email: email,
+		ID:       strconv.Itoa(ghUser.ID),
+		Name:     name,
+		Email:    email,
+		Provider: "github",
 	}, nil
 }

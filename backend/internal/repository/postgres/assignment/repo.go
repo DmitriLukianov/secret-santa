@@ -5,6 +5,7 @@ import (
 
 	"secret-santa-backend/internal/entity"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -16,60 +17,39 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) CreateMany(ctx context.Context, assignments []entity.Assignment) error {
-	query := `
-		INSERT INTO assignments (id, event_id, giver_id, receiver_id)
-		VALUES ($1, $2, $3, $4)
-	`
+func (r *Repository) Create(ctx context.Context, a entity.Assignment) error {
+	query := createAssignmentQuery().
+		Values(a.ID, a.EventID, a.GiverID, a.ReceiverID, a.CreatedAt)
 
-	for _, a := range assignments {
-		_, err := r.db.Exec(
-			ctx,
-			query,
-			a.ID,
-			a.EventID,
-			a.GiverID,
-			a.ReceiverID,
-		)
-		if err != nil {
-			return err
-		}
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
 	}
-
-	return nil
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
 }
 
-func (r *Repository) GetByEvent(ctx context.Context, eventID string) ([]entity.Assignment, error) {
-	query := `
-		SELECT id, event_id, giver_id, receiver_id, created_at
-		FROM assignments
-		WHERE event_id = $1
-	`
-
-	rows, err := r.db.Query(ctx, query, eventID)
+func (r *Repository) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error) {
+	query := getAssignmentsByEventQuery(eventID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var result []entity.Assignment
+	return scanAssignments(rows)
+}
 
-	for rows.Next() {
-		var a entity.Assignment
-
-		err := rows.Scan(
-			&a.ID,
-			&a.EventID,
-			&a.GiverID,
-			&a.ReceiverID,
-			&a.CreatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, a)
+func (r *Repository) DeleteByEvent(ctx context.Context, eventID uuid.UUID) error {
+	query := deleteAssignmentsByEventQuery(eventID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
 	}
-
-	return result, nil
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
 }

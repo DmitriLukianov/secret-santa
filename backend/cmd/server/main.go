@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -9,30 +10,28 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 
+	authpkg "secret-santa-backend/internal/auth"
+	"secret-santa-backend/internal/logger"
 	"secret-santa-backend/internal/middleware"
 
+	postgres "secret-santa-backend/internal/repository/postgres"
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
 	eventrepo "secret-santa-backend/internal/repository/postgres/event"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
 	userrepo "secret-santa-backend/internal/repository/postgres/user"
 	wishlistrepo "secret-santa-backend/internal/repository/postgres/wishlist"
 
-	postgres "secret-santa-backend/internal/repository/postgres"
-
 	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
+	authusecase "secret-santa-backend/internal/usecase/auth"
 	eventusecase "secret-santa-backend/internal/usecase/event"
 	participantusecase "secret-santa-backend/internal/usecase/participant"
 	userusecase "secret-santa-backend/internal/usecase/user"
 	wishlistusecase "secret-santa-backend/internal/usecase/wishlist"
 
-	oauth "secret-santa-backend/internal/auth"
-	authusecase "secret-santa-backend/internal/usecase/auth"
-
 	v1 "secret-santa-backend/internal/controller/http/v1"
 )
 
 func main() {
-
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
@@ -48,22 +47,39 @@ func main() {
 	}
 	defer db.Close()
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET is not set")
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	stage := os.Getenv("APP_ENV")
+	if stage == "" {
+		stage = "local"
 	}
 
-	jwtTTL, err := time.ParseDuration(os.Getenv("JWT_TTL"))
-	if err != nil || jwtTTL == 0 {
+	log := logger.New(logLevel, stage)
+	log.Info("logger initialized",
+		slog.String("level", logLevel),
+		slog.String("stage", stage),
+	)
+
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Error("JWT_SECRET is not set")
+		os.Exit(1)
+	}
+
+	jwtTTL, _ := time.ParseDuration(os.Getenv("JWT_TTL"))
+	if jwtTTL == 0 {
 		jwtTTL = 24 * time.Hour
 	}
 
-	jwtManager, err := oauth.NewJWTManager(jwtSecret, jwtTTL)
+	jwtManager, err := authpkg.NewJWTManager(jwtSecret, jwtTTL)
 	if err != nil {
-		log.Fatal("failed to create JWT manager:", err)
+		log.Error("failed to create JWT manager", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
-	provider := oauth.NewGitHubProvider(
+	provider := authpkg.NewGitHubProvider(
 		os.Getenv("GITHUB_CLIENT_ID"),
 		os.Getenv("GITHUB_CLIENT_SECRET"),
 		os.Getenv("GITHUB_REDIRECT_URL"),
@@ -75,20 +91,21 @@ func main() {
 	assignmentRepo := assignmentrepo.New(db)
 	wishlistRepo := wishlistrepo.New(db)
 
-	userUC := userusecase.New(userRepo)
-	eventUC := eventusecase.New(eventRepo)
-	participantUC := participantusecase.New(participantRepo)
-	assignmentUC := assignmentusecase.New(assignmentRepo, participantRepo)
-	wishlistUC := wishlistusecase.New(wishlistRepo)
+	userUC := userusecase.NewWithLogger(userRepo, log)
+	authUC := authusecase.New(userUC)
 
-	authUC := authusecase.New(userRepo)
+	eventUC := eventusecase.NewWithLogger(eventRepo, log)
+	participantUC := participantusecase.NewWithLogger(participantRepo, log)
+
+	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventUC, log)
+
+	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, assignmentUC, log)
 
 	userHandler := v1.NewUserHandler(userUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
+	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
-	wishlistHandler := v1.NewWishlistHandler(wishlistUC)
-
 	authHandler := v1.NewAuthHandler(provider, jwtManager, authUC)
 
 	r := chi.NewRouter()
@@ -110,21 +127,26 @@ func main() {
 		r.Get("/events/{id}", eventHandler.GetEventByID)
 		r.Put("/events/{id}", eventHandler.UpdateEvent)
 		r.Delete("/events/{id}", eventHandler.DeleteEvent)
+		r.Post("/events/{id}/finish", eventHandler.FinishEvent)
 
 		r.Post("/events/{eventId}/participants", participantHandler.Add)
 		r.Get("/events/{eventId}/participants", participantHandler.GetByEvent)
+		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
 		r.Delete("/participants/{id}", participantHandler.Delete)
-
-		r.Post("/events/{eventId}/assign", assignmentHandler.Draw)
-		r.Get("/events/{eventId}/assignments", assignmentHandler.GetByEvent)
 
 		r.Post("/users/{userId}/wishlist", wishlistHandler.Create)
 		r.Get("/users/{userId}/wishlist", wishlistHandler.GetByUser)
-		r.Delete("/wishlist/{id}", wishlistHandler.Delete)
+		r.Post("/wishlists/{wishlistId}/items", wishlistHandler.AddItem)
+		r.Get("/wishlists/{wishlistId}/items", wishlistHandler.GetItems)
+
+		r.Post("/events/{eventId}/assign", assignmentHandler.Draw)
+		r.Get("/events/{eventId}/assignments", assignmentHandler.GetByEvent)
 	})
 
-	log.Println("🚀 Server running on :8080")
+	log.Info("🚀 Server running on :8080")
+
 	if err := http.ListenAndServe(":8080", r); err != nil {
-		log.Fatal(err)
+		log.Error("server failed to start", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 }

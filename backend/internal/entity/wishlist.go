@@ -1,14 +1,54 @@
 package entity
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type Wishlist struct {
-	ID          string
-	UserID      string
-	Title       string
-	Description string
-	Link        string
-	ImageURL    string
-	Visibility  string
-	CreatedAt   time.Time
+	ID            uuid.UUID `db:"id"`
+	ParticipantID uuid.UUID `db:"participant_id"`
+	Visibility    string    `db:"visibility"`
+	CreatedAt     time.Time `db:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at"`
+}
+
+type WishlistItem struct {
+	ID         uuid.UUID `db:"id"`
+	WishlistID uuid.UUID `db:"wishlist_id"`
+	Title      string    `db:"title"`
+	Link       *string   `db:"link"`
+	ImageURL   *string   `db:"image_url"`
+	Comment    *string   `db:"comment"`
+	CreatedAt  time.Time `db:"created_at"`
+}
+
+const (
+	WishlistVisibilityPublic    = "public"
+	WishlistVisibilityFriends   = "friends"
+	WishlistVisibilitySantaOnly = "santa_only"
+)
+
+func NewWishlist(participantID uuid.UUID, visibility string) Wishlist {
+	now := time.Now()
+	return Wishlist{
+		ID:            uuid.New(),
+		ParticipantID: participantID,
+		Visibility:    visibility,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+}
+
+func NewWishlistItem(wishlistID uuid.UUID, title string, link, imageURL, comment *string) WishlistItem {
+	return WishlistItem{
+		ID:         uuid.New(),
+		WishlistID: wishlistID,
+		Title:      title,
+		Link:       link,
+		ImageURL:   imageURL,
+		Comment:    comment,
+		CreatedAt:  time.Now(),
+	}
 }

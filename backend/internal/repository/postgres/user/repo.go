@@ -2,11 +2,10 @@ package user
 
 import (
 	"context"
-	"strconv"
-	"strings"
 
 	"secret-santa-backend/internal/entity"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -18,162 +17,84 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// CREATE — сохраняет пользователя с oauth_id
 func (r *Repository) Create(ctx context.Context, user entity.User) error {
-	query := `
-		INSERT INTO users (id, name, email, oauth_id)
-		VALUES ($1, $2, $3, $4)
-	`
+	query := Create().
+		Values(user.Name, user.Email, user.OAuthID, user.OAuthProvider)
 
-	_, err := r.db.Exec(ctx, query,
-		user.ID,
-		user.Name,
-		user.Email,
-		user.OAuthID,
-	)
-
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
 	return err
 }
 
-func (r *Repository) GetByID(ctx context.Context, id string) (*entity.User, error) {
-	query := `
-		SELECT id, name, email, oauth_id, created_at
-		FROM users
-		WHERE id = $1
-	`
-
-	row := r.db.QueryRow(ctx, query, id)
-
-	var user entity.User
-	err := row.Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.OAuthID,
-		&user.CreatedAt,
-	)
+func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
+	query := GetByID(id)
+	sql, args, err := query.ToSql()
 	if err != nil {
 		return nil, err
 	}
-
-	return &user, nil
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanUser(row)
 }
 
-// GetByOAuthID — поиск пользователя по идентификатору OAuth-провайдера (GitHub id)
-func (r *Repository) GetByOAuthID(ctx context.Context, oauthID string) (*entity.User, error) {
-	query := `
-		SELECT id, name, email, oauth_id, created_at
-		FROM users
-		WHERE oauth_id = $1
-	`
-
-	row := r.db.QueryRow(ctx, query, oauthID)
-
-	var user entity.User
-	err := row.Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.OAuthID,
-		&user.CreatedAt,
-	)
+func (r *Repository) GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error) {
+	query := GetByOAuthID(oauthID, oauthProvider)
+	sql, args, err := query.ToSql()
 	if err != nil {
 		return nil, err
 	}
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanUser(row)
+}
 
-	return &user, nil
+func (r *Repository) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
+	query := GetByEmail(email)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanUser(row)
 }
 
 func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
-	query := `
-		SELECT id, name, email, oauth_id, created_at
-		FROM users
-	`
-
-	rows, err := r.db.Query(ctx, query)
+	query := GetAll()
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	var users []entity.User
-
-	for rows.Next() {
-		var u entity.User
-
-		if err := rows.Scan(
-			&u.ID,
-			&u.Name,
-			&u.Email,
-			&u.OAuthID,
-			&u.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-
-		users = append(users, u)
-	}
-
-	return users, nil
+	return scanUsers(rows)
 }
 
-func (r *Repository) Update(ctx context.Context, id string, name, email *string) error {
-	query := "UPDATE users SET "
-	args := []interface{}{}
-	argID := 1
-
+func (r *Repository) Update(ctx context.Context, id uuid.UUID, name, email *string) error {
+	query := Update(id)
 	if name != nil {
-		query += "name = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *name)
-		argID++
+		query = query.Set("name", *name)
 	}
-
 	if email != nil {
-		query += "email = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *email)
-		argID++
+		query = query.Set("email", *email)
 	}
-
-	if len(args) == 0 {
-		return nil
-	}
-
-	query = strings.TrimSuffix(query, ", ")
-	query += " WHERE id = $" + strconv.Itoa(argID)
-	args = append(args, id)
-
-	_, err := r.db.Exec(ctx, query, args...)
-	return err
-}
-
-func (r *Repository) Delete(ctx context.Context, id string) error {
-	query := `DELETE FROM users WHERE id = $1`
-
-	_, err := r.db.Exec(ctx, query, id)
-	return err
-}
-
-func (r *Repository) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
-	query := `
-		SELECT id, name, email, oauth_id, created_at
-		FROM users
-		WHERE email = $1
-	`
-
-	row := r.db.QueryRow(ctx, query, email)
-
-	var user entity.User
-	err := row.Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.OAuthID,
-		&user.CreatedAt,
-	)
-
+	sql, args, err := query.ToSql()
 	if err != nil {
-		return nil, err
+		return err
 	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
 
-	return &user, nil
+func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
+	query := Delete(id)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
 }
