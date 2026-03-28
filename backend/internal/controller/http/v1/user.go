@@ -11,15 +11,20 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase"
 )
 
 type UserHandler struct {
-	uc usecase.UserUseCase
+	uc      usecase.UserUseCase
+	eventUC usecase.EventUseCase // ← НОВОЕ поле
 }
 
-func NewUserHandler(uc usecase.UserUseCase) *UserHandler {
-	return &UserHandler{uc: uc}
+func NewUserHandler(uc usecase.UserUseCase, eventUC usecase.EventUseCase) *UserHandler {
+	return &UserHandler{
+		uc:      uc,
+		eventUC: eventUC,
+	}
 }
 
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -131,4 +136,40 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *UserHandler) GetMyEvents(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		writeHTTPError(w, err)
+		return
+	}
+
+	events, err := h.eventUC.GetMyEvents(r.Context(), userID) // ← используем eventUC
+	if err != nil {
+		writeHTTPError(w, err)
+		return
+	}
+
+	var resp []response.EventResponse
+	for _, e := range events {
+		resp = append(resp, response.EventResponse{
+			ID:              e.ID.String(),
+			Title:           e.Title,
+			Description:     e.Description,
+			Rules:           e.Rules,
+			Recommendations: e.Recommendations,
+			OrganizerID:     e.OrganizerID.String(),
+			StartDate:       e.StartDate,
+			DrawDate:        e.DrawDate,
+			EndDate:         e.EndDate,
+			Status:          string(e.Status),
+			MaxParticipants: e.MaxParticipants,
+			CreatedAt:       e.CreatedAt,
+			UpdatedAt:       e.UpdatedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

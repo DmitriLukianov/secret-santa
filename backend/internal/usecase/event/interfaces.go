@@ -15,4 +15,5 @@ type Repository interface {
 	GetAll(ctx context.Context) ([]entity.Event, error)
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
 }

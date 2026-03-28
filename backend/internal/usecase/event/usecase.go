@@ -216,6 +216,35 @@ func (uc *UseCase) Finish(ctx context.Context, id, userID uuid.UUID) error {
 	return nil
 }
 
+// GetMyEvents — возвращает все события, где пользователь является организатором ИЛИ участником
+func (uc *UseCase) GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
+	if userID == uuid.Nil {
+		return nil, fmt.Errorf("user id is required")
+	}
+
+	if uc.log != nil {
+		uc.log.Info("get my events started", slog.String("user_id", userID.String()))
+	}
+
+	events, err := uc.repo.GetEventsForUser(ctx, userID)
+	if err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to get my events",
+				slog.String("user_id", userID.String()),
+				slog.String("error", err.Error()))
+		}
+		return nil, fmt.Errorf("failed to get my events: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("my events returned successfully",
+			slog.String("user_id", userID.String()),
+			slog.Int("count", len(events)))
+	}
+
+	return events, nil
+}
+
 // stringPtr — маленькая вспомогательная функция
 func stringPtr(s string) *string {
 	return &s
