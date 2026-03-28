@@ -133,3 +133,25 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM events WHERE id = $1`, id)
 	return err
 }
+
+// GetEventsForUser — возвращает события, где пользователь организатор ИЛИ участник
+func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
+	query := `
+		SELECT DISTINCT e.id, e.title, e.description, e.rules, e.recommendations, 
+		       e.organizer_id, e.start_date, e.draw_date, e.end_date, 
+		       e.status, e.max_participants, e.created_at, e.updated_at
+		FROM events e
+		LEFT JOIN participants p ON e.id = p.event_id
+		WHERE e.organizer_id = $1 
+		   OR p.user_id = $1
+		ORDER BY e.created_at DESC
+	`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return ScanEvents(rows)
+}

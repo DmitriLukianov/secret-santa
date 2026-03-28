@@ -101,7 +101,7 @@ func main() {
 
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, assignmentUC, log)
 
-	userHandler := v1.NewUserHandler(userUC)
+	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
@@ -121,6 +121,8 @@ func main() {
 		r.Get("/users/{id}", userHandler.GetUserByID)
 		r.Put("/users/{id}", userHandler.UpdateUser)
 		r.Delete("/users/{id}", userHandler.DeleteUser)
+
+		r.Get("/me/events", userHandler.GetMyEvents)
 
 		r.Post("/events", eventHandler.CreateEvent)
 		r.Get("/events", eventHandler.GetEvents)

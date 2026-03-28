@@ -27,6 +27,7 @@ type EventUseCase interface {
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	Finish(ctx context.Context, id, userID uuid.UUID) error
+	GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
 }
 
 // ParticipantUseCase — публичный интерфейс участников
