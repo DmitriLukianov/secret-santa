@@ -1,4 +1,4 @@
-package auth
+package oauth
 
 import (
 	"errors"
@@ -28,11 +28,13 @@ type Claims struct {
 }
 
 func (m *JWTManager) GenerateToken(userID string) (string, error) {
+	now := time.Now().UTC()
 	claims := Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.ttl)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(m.ttl)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
 			Issuer:    "secret-santa",
 			Audience:  jwt.ClaimStrings{"secret-santa-api"},
 		},
@@ -51,6 +53,7 @@ func (m *JWTManager) ParseToken(tokenStr string) (*Claims, error) {
 	},
 		jwt.WithIssuer("secret-santa"),
 		jwt.WithAudience("secret-santa-api"),
+		jwt.WithLeeway(2*time.Second),
 	)
 
 	if err != nil {

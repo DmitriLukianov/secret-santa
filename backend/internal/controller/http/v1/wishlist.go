@@ -30,31 +30,31 @@ func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.Partic
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	var req request.CreateWishlistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
 
 	eventID, err := uuid.Parse(req.EventID)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	participant, err := h.participantUC.GetByUserAndEvent(r.Context(), userID, eventID)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	wishlist, err := h.uc.Create(r.Context(), participant.ID, req.Visibility)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -75,13 +75,13 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	var req request.CreateWishlistItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		&req.Comment,
 	)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
@@ -115,35 +115,35 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	eventIDStr := r.URL.Query().Get("eventId")
 	if eventIDStr == "" {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	participant, err := h.participantUC.GetByUserAndEvent(r.Context(), userID, eventID)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	wishlist, err := h.uc.GetForUser(r.Context(), eventID, participant.ID, userID)
 	if err != nil {
 		if errors.Is(err, definitions.ErrNotSanta) {
-			writeHTTPError(w, definitions.ErrForbidden)
+			response.WriteHTTPError(w, definitions.ErrForbidden)
 			return
 		}
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -163,13 +163,13 @@ func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	items, err := h.uc.GetItems(r.Context(), wishlistID)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 

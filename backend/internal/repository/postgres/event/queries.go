@@ -6,7 +6,7 @@ var psql = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 func getEventQuery() squirrel.SelectBuilder {
 	return psql.Select(
-		"id", "name", "description", "rules", "recommendations",
+		"id", "title", "description", "rules", "recommendations",
 		"organizer_id", "start_date", "draw_date", "end_date",
 		"status", "max_participants", "created_at", "updated_at",
 	).
@@ -20,7 +20,7 @@ func listEventsQuery() squirrel.SelectBuilder {
 func createEventQuery() squirrel.InsertBuilder {
 	return psql.Insert("events").
 		Columns(
-			"id", "name", "description", "rules", "recommendations",
+			"id", "title", "description", "rules", "recommendations",
 			"organizer_id", "start_date", "draw_date", "end_date",
 			"status", "max_participants",
 		)

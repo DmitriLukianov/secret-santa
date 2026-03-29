@@ -9,6 +9,9 @@ env-up:
 env-down:
 	@docker compose down postgres
 
+env-run:
+	@go run ./cmd/app/main.go
+
 env-cleanup:
 	@read -p "очистить все volume файлы окружения? Опасность утери данных.[y/n]: " ans; \
 	if [ "$$ans" = "y" ]; then \

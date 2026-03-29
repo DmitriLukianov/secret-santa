@@ -23,7 +23,6 @@ type UpdateEventInput struct {
 	StartDate       *time.Time `json:"startDate"`
 	DrawDate        *time.Time `json:"drawDate"`
 	EndDate         *time.Time `json:"endDate"`
-	Status          *string    `json:"status"`
 	MaxParticipants *int       `json:"maxParticipants"`
 }
 

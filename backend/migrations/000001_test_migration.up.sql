@@ -192,4 +192,36 @@ COMMENT ON COLUMN wishlist_items.created_at IS 'Дата добавления';
 
 CREATE INDEX IF NOT EXISTS idx_wishlist_items_wishlist ON wishlist_items(wishlist_id);
 
+CREATE TABLE IF NOT EXISTS invitations (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id    UUID NOT NULL,
+    token       TEXT UNIQUE NOT NULL,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_by  UUID NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    updated_at  TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT fk_invitations_event 
+        FOREIGN KEY (event_id) 
+        REFERENCES events(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_invitations_created_by 
+        FOREIGN KEY (created_by) 
+        REFERENCES users(id) 
+        ON DELETE CASCADE
+);
+
+COMMENT ON TABLE invitations IS 'Приглашения по ссылке для событий Тайный Санта (многоразовые)';
+COMMENT ON COLUMN invitations.id IS 'Уникальный идентификатор приглашения';
+COMMENT ON COLUMN invitations.event_id IS 'Событие, к которому приглашение';
+COMMENT ON COLUMN invitations.token IS 'Уникальный токен для ссылки';
+COMMENT ON COLUMN invitations.expires_at IS 'Срок действия приглашения';
+COMMENT ON COLUMN invitations.created_by IS 'Кто создал приглашение (организатор)';
+COMMENT ON COLUMN invitations.created_at IS 'Дата создания';
+COMMENT ON COLUMN invitations.updated_at IS 'Дата последнего обновления';
+
+CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
+CREATE INDEX IF NOT EXISTS idx_invitations_event ON invitations(event_id);
+
 -- +goose StatementEnd

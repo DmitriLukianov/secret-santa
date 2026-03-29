@@ -106,11 +106,6 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateE
 		args = append(args, *input.EndDate)
 		argID++
 	}
-	if input.Status != nil {
-		query += "status = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.Status)
-		argID++
-	}
 	if input.MaxParticipants != nil {
 		query += "max_participants = $" + strconv.Itoa(argID) + ", "
 		args = append(args, *input.MaxParticipants)
@@ -129,12 +124,21 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateE
 	return err
 }
 
+func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
+	query := `
+		UPDATE events 
+		SET status = $1, updated_at = NOW() 
+		WHERE id = $2
+	`
+	_, err := r.db.Exec(ctx, query, status, id)
+	return err
+}
+
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM events WHERE id = $1`, id)
 	return err
 }
 
-// GetEventsForUser — возвращает события, где пользователь организатор ИЛИ участник
 func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
 	query := `
 		SELECT DISTINCT e.id, e.title, e.description, e.rules, e.recommendations, 

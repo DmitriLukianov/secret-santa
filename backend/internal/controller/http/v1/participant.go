@@ -26,19 +26,19 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	participant, err := h.uc.Create(r.Context(), eventID, userID, entity.ParticipantRoleParticipant)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -60,13 +60,13 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	participants, err := h.uc.GetByEvent(r.Context(), eventID)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -90,13 +90,13 @@ func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	err = h.uc.MarkGiftSent(r.Context(), id)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -107,13 +107,13 @@ func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	err = h.uc.Delete(r.Context(), id)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
