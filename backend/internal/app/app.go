@@ -98,7 +98,7 @@ func New() *App {
 	})
 
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.NewAuthMiddleware(jwtManager).Handler)
+		r.Use(middleware.NewAuthMiddleware(jwtManager, log).Handler)
 
 		r.Route("/users", func(r chi.Router) {
 			r.Post("/", userHandler.CreateUser)
