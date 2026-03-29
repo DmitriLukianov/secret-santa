@@ -5,18 +5,19 @@ import (
 	"net/http"
 	"time"
 
-	authpkg "secret-santa-backend/internal/auth"
+	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/oauth"
 	authuc "secret-santa-backend/internal/usecase/auth"
 )
 
 type AuthHandler struct {
-	provider authpkg.Provider
-	jwt      *authpkg.JWTManager
+	provider oauth.Provider
+	jwt      *oauth.JWTManager
 	uc       *authuc.UseCase
 }
 
-func NewAuthHandler(provider authpkg.Provider, jwt *authpkg.JWTManager, uc *authuc.UseCase) *AuthHandler {
+func NewAuthHandler(provider oauth.Provider, jwt *oauth.JWTManager, uc *authuc.UseCase) *AuthHandler {
 	return &AuthHandler{
 		provider: provider,
 		jwt:      jwt,
@@ -26,9 +27,10 @@ func NewAuthHandler(provider authpkg.Provider, jwt *authpkg.JWTManager, uc *auth
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	state := "ss-" + time.Now().Format("20060102150405")
+	url := h.provider.GetAuthURL(state)
 
-	url := h.provider.Config().AuthCodeURL(state)
-	http.Redirect(w, r, url, http.StatusFound)
+	w.Header().Set("Location", url)
+	w.WriteHeader(http.StatusFound)
 }
 
 func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
@@ -36,31 +38,31 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		writeHTTPError(w, definitions.ErrInvalidOAuthCode)
+		response.WriteHTTPError(w, definitions.ErrInvalidOAuthCode)
 		return
 	}
 
 	token, err := h.provider.Config().Exchange(ctx, code)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
-	user, err := h.provider.GetUserInfo(ctx, token)
+	userInfo, err := h.provider.GetUserInfo(ctx, token)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
-	userID, err := h.uc.LoginWithOAuth(ctx, user)
+	userID, err := h.uc.LoginWithOAuth(ctx, userInfo)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	jwtToken, err := h.jwt.GenerateToken(userID)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 

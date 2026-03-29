@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"secret-santa-backend/internal/auth"
+	auth "secret-santa-backend/internal/oauth"
 
 	"github.com/google/uuid"
 )
@@ -40,6 +40,11 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 		claims, err := m.jwtManager.ParseToken(tokenStr)
 		if err != nil {
 			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		if claims.UserID == "" {
+			http.Error(w, "invalid user id in token", http.StatusUnauthorized)
 			return
 		}
 

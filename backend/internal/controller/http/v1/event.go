@@ -1,8 +1,8 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -24,16 +24,18 @@ func NewEventHandler(uc usecase.EventUseCase) *EventHandler {
 	return &EventHandler{uc: uc}
 }
 
+// ==================== CRUD ====================
+
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	var req request.CreateEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
 
@@ -50,89 +52,43 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	event, err := h.uc.Create(r.Context(), input, userID)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
-	}
-
-	resp := response.EventResponse{
-		ID:              event.ID.String(),
-		Title:           event.Title,
-		Description:     event.Description,
-		Rules:           event.Rules,
-		Recommendations: event.Recommendations,
-		OrganizerID:     event.OrganizerID.String(),
-		StartDate:       event.StartDate,
-		DrawDate:        event.DrawDate,
-		EndDate:         event.EndDate,
-		Status:          string(event.Status),
-		MaxParticipants: event.MaxParticipants,
-		CreatedAt:       event.CreatedAt,
-		UpdatedAt:       event.UpdatedAt,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.EventResponseFromEntity(event))
 }
 
 func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	event, err := h.uc.GetByID(r.Context(), id)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
-	resp := response.EventResponse{
-		ID:              event.ID.String(),
-		Title:           event.Title,
-		Description:     event.Description,
-		Rules:           event.Rules,
-		Recommendations: event.Recommendations,
-		OrganizerID:     event.OrganizerID.String(),
-		StartDate:       event.StartDate,
-		DrawDate:        event.DrawDate,
-		EndDate:         event.EndDate,
-		Status:          string(event.Status),
-		MaxParticipants: event.MaxParticipants,
-		CreatedAt:       event.CreatedAt,
-		UpdatedAt:       event.UpdatedAt,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.EventResponseFromEntity(*event))
 }
 
 func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	events, err := h.uc.GetAll(r.Context())
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	var resp []response.EventResponse
 	for _, e := range events {
-		resp = append(resp, response.EventResponse{
-			ID:              e.ID.String(),
-			Title:           e.Title,
-			Description:     e.Description,
-			Rules:           e.Rules,
-			Recommendations: e.Recommendations,
-			OrganizerID:     e.OrganizerID.String(),
-			StartDate:       e.StartDate,
-			DrawDate:        e.DrawDate,
-			EndDate:         e.EndDate,
-			Status:          string(e.Status),
-			MaxParticipants: e.MaxParticipants,
-			CreatedAt:       e.CreatedAt,
-			UpdatedAt:       e.UpdatedAt,
-		})
+		resp = append(resp, response.EventResponseFromEntity(e))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -143,13 +99,13 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	var req request.UpdateEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
 
@@ -161,13 +117,11 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		StartDate:       req.StartDate,
 		DrawDate:        req.DrawDate,
 		EndDate:         req.EndDate,
-		Status:          req.Status,
 		MaxParticipants: req.MaxParticipants,
 	}
 
-	err = h.uc.Update(r.Context(), id, input)
-	if err != nil {
-		writeHTTPError(w, err)
+	if err := h.uc.Update(r.Context(), id, input); err != nil {
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -178,46 +132,61 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
-	err = h.uc.Delete(r.Context(), id)
-	if err != nil {
-		writeHTTPError(w, err)
+	if err := h.uc.Delete(r.Context(), id); err != nil {
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ==================== Статусы событий ====================
+
+func (h *EventHandler) OpenInvitation(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.OpenInvitation)
+}
+
+func (h *EventHandler) CloseRegistration(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.CloseRegistration)
+}
+
+func (h *EventHandler) StartDrawing(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.StartDrawing)
+}
+
 func (h *EventHandler) FinishEvent(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.Finish)
+}
+
+func (h *EventHandler) CancelEvent(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.Cancel)
+}
+
+// Универсальный helper (чисто и безопасно)
+func (h *EventHandler) changeStatus(w http.ResponseWriter, r *http.Request, action func(ctx context.Context, id, userID uuid.UUID) error) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
-	err = h.uc.Finish(r.Context(), id, userID)
-	if err != nil {
-		if errors.Is(err, definitions.ErrNotOrganizer) {
-			writeHTTPError(w, definitions.ErrForbidden)
-			return
-		}
-		writeHTTPError(w, err)
+	if err := action(r.Context(), id, userID); err != nil {
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Событие успешно завершено",
-	})
+	json.NewEncoder(w).Encode(map[string]string{"message": "Статус события успешно изменён"})
 }

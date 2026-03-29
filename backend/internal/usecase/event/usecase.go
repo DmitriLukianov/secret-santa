@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"secret-santa-backend/internal/definitions"
-
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
@@ -27,9 +25,8 @@ func NewWithLogger(repo Repository, log *slog.Logger) *UseCase {
 	return &UseCase{repo: repo, log: log}
 }
 
-// Create — создаёт событие
+// Create — создаёт событие в статусе draft
 func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error) {
-	now := time.Now()
 	if uc.log != nil {
 		uc.log.Info("create event started",
 			slog.String("organizer_id", organizerID.String()),
@@ -37,20 +34,8 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		)
 	}
 
-	// DTO имеет StartDate/EndDate как time.Time (не указатели), DrawDate — *time.Time
-	startDate := now
-	if !input.StartDate.IsZero() {
-		startDate = input.StartDate
-	}
-
-	drawDate := now
-	if input.DrawDate != nil {
-		drawDate = *input.DrawDate
-	}
-
-	endDate := now
-	if !input.EndDate.IsZero() {
-		endDate = input.EndDate
+	if organizerID == uuid.Nil {
+		return entity.Event{}, definitions.ErrInvalidUserInput
 	}
 
 	event := entity.NewEvent(
@@ -59,41 +44,39 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		input.Description,
 		input.Rules,
 		input.Recommendations,
-		startDate,
-		drawDate,
-		endDate,
+		input.StartDate,
+		input.EndDate,
+		input.DrawDate,
 		input.MaxParticipants,
 	)
 
 	if err := uc.repo.Create(ctx, event); err != nil {
 		if uc.log != nil {
-			uc.log.Error("failed to create event",
-				slog.String("organizer_id", organizerID.String()),
-				slog.String("title", input.Title),
-				slog.String("error", err.Error()),
-			)
+			uc.log.Error("failed to create event", slog.String("error", err.Error()))
 		}
-		return entity.Event{}, fmt.Errorf("failed to create event: %w", err)
+		return entity.Event{}, fmt.Errorf("%w: %w", definitions.ErrConflict, err)
 	}
 
 	if uc.log != nil {
-		uc.log.Info("event created successfully",
-			slog.String("event_id", event.ID.String()),
-			slog.String("organizer_id", organizerID.String()),
-		)
+		uc.log.Info("event created successfully", slog.String("event_id", event.ID.String()))
 	}
-
 	return event, nil
 }
 
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	if id == uuid.Nil {
-		return nil, fmt.Errorf("event id is required")
+		return nil, definitions.ErrInvalidUserInput
 	}
+
 	if uc.log != nil {
 		uc.log.Info("get event by id started", slog.String("event_id", id.String()))
 	}
-	return uc.repo.GetByID(ctx, id)
+
+	event, err := uc.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+	}
+	return event, nil
 }
 
 func (uc *UseCase) GetAll(ctx context.Context) ([]entity.Event, error) {
@@ -105,121 +88,139 @@ func (uc *UseCase) GetAll(ctx context.Context) ([]entity.Event, error) {
 
 func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
 	if id == uuid.Nil {
-		return fmt.Errorf("event id is required")
+		return definitions.ErrInvalidUserInput
 	}
+
 	if uc.log != nil {
-		uc.log.Info("update event started",
-			slog.String("event_id", id.String()),
-			slog.Any("input", input),
-		)
+		uc.log.Info("update event started", slog.String("event_id", id.String()))
 	}
+
 	if err := uc.repo.Update(ctx, id, input); err != nil {
 		if uc.log != nil {
-			uc.log.Error("failed to update event",
-				slog.String("event_id", id.String()),
-				slog.String("error", err.Error()),
-			)
+			uc.log.Error("failed to update event", slog.String("error", err.Error()))
 		}
 		return err
 	}
+
 	if uc.log != nil {
 		uc.log.Info("event updated successfully", slog.String("event_id", id.String()))
 	}
 	return nil
 }
 
-func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
+// UpdateStatus — ОБЯЗАТЕЛЬНЫЙ метод для интерфейса
+func (uc *UseCase) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
 	if id == uuid.Nil {
-		return fmt.Errorf("event id is required")
+		return definitions.ErrInvalidUserInput
 	}
+
 	if uc.log != nil {
-		uc.log.Info("delete event started", slog.String("event_id", id.String()))
+		uc.log.Info("update event status started",
+			slog.String("event_id", id.String()),
+			slog.String("status", string(status)),
+		)
 	}
-	if err := uc.repo.Delete(ctx, id); err != nil {
+
+	if err := uc.repo.UpdateStatus(ctx, id, status); err != nil {
 		if uc.log != nil {
-			uc.log.Error("failed to delete event",
-				slog.String("event_id", id.String()),
-				slog.String("error", err.Error()),
-			)
+			uc.log.Error("failed to update event status", slog.String("error", err.Error()))
 		}
 		return err
 	}
+
+	if uc.log != nil {
+		uc.log.Info("event status updated successfully", slog.String("event_id", id.String()))
+	}
+	return nil
+}
+
+func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
+	if id == uuid.Nil {
+		return definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("delete event started", slog.String("event_id", id.String()))
+	}
+
+	if err := uc.repo.Delete(ctx, id); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to delete event", slog.String("error", err.Error()))
+		}
+		return err
+	}
+
 	if uc.log != nil {
 		uc.log.Info("event deleted successfully", slog.String("event_id", id.String()))
 	}
 	return nil
 }
 
-// Finish — завершает событие (только организатор)
+// Finish — завершает событие
 func (uc *UseCase) Finish(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusFinished)
+}
+
+// StartDrawing — готов к жеребьёвке
+func (uc *UseCase) StartDrawing(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusDrawingPending)
+}
+
+// OpenInvitation, CloseRegistration, Cancel — добавлены для полноты
+func (uc *UseCase) OpenInvitation(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusInvitationOpen)
+}
+
+func (uc *UseCase) CloseRegistration(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusRegistrationClosed)
+}
+
+func (uc *UseCase) Cancel(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusCancelled)
+}
+
+// Внутренний метод для смены статуса
+// changeStatus — центральный и единственный метод смены статуса
+func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newStatus entity.EventStatus) error {
 	if id == uuid.Nil || userID == uuid.Nil {
-		return fmt.Errorf("event id and user id are required")
-	}
-	if uc.log != nil {
-		uc.log.Info("finish event started",
-			slog.String("event_id", id.String()),
-			slog.String("user_id", userID.String()),
-		)
+		return definitions.ErrInvalidUserInput
 	}
 
-	event, err := uc.repo.GetByID(ctx, id)
+	eventPtr, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		if uc.log != nil {
-			uc.log.Error("failed to get event for finish",
-				slog.String("event_id", id.String()),
-				slog.String("error", err.Error()),
-			)
-		}
-		return fmt.Errorf("failed to get event: %w", err)
+		return fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
 	}
 
-	// Проверка организатора
-	if event.OrganizerID != userID {
-		if uc.log != nil {
-			uc.log.Warn("finish denied: not organizer",
-				slog.String("event_id", id.String()),
-				slog.String("user_id", userID.String()),
-				slog.String("organizer_id", event.OrganizerID.String()),
-			)
-		}
+	if eventPtr.OrganizerID != userID {
 		return definitions.ErrNotOrganizer
 	}
 
-	if !event.CanBeFinished() {
-		if uc.log != nil {
-			uc.log.Warn("finish denied: invalid event status",
-				slog.String("event_id", id.String()),
-				slog.String("status", string(event.Status)),
-			)
-		}
-		return definitions.ErrInvalidEventState
+	// Защита от повторного действия
+	if eventPtr.Status == newStatus {
+		return fmt.Errorf("%w: status already %s", definitions.ErrInvalidEventState, newStatus)
 	}
 
-	event.MarkAsFinished()
+	if err := eventPtr.TransitionTo(newStatus); err != nil {
+		return err
+	}
 
-	if err := uc.repo.Update(ctx, id, dto.UpdateEventInput{Status: stringPtr(string(entity.EventStatusFinished))}); err != nil {
-		if uc.log != nil {
-			uc.log.Error("failed to mark event as finished",
-				slog.String("event_id", id.String()),
-				slog.String("error", err.Error()),
-			)
-		}
+	if err := uc.repo.UpdateStatus(ctx, id, eventPtr.Status); err != nil {
 		return err
 	}
 
 	if uc.log != nil {
-		uc.log.Info("event finished successfully",
+		uc.log.Info("event status changed",
 			slog.String("event_id", id.String()),
-			slog.String("user_id", userID.String()),
+			slog.String("old_status", string(eventPtr.Status)),
+			slog.String("new_status", string(newStatus)),
 		)
 	}
 	return nil
 }
 
-// GetMyEvents — возвращает все события, где пользователь является организатором ИЛИ участником
 func (uc *UseCase) GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
 	if userID == uuid.Nil {
-		return nil, fmt.Errorf("user id is required")
+		return nil, definitions.ErrInvalidUserInput
 	}
 
 	if uc.log != nil {
@@ -229,23 +230,16 @@ func (uc *UseCase) GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.
 	events, err := uc.repo.GetEventsForUser(ctx, userID)
 	if err != nil {
 		if uc.log != nil {
-			uc.log.Error("failed to get my events",
-				slog.String("user_id", userID.String()),
-				slog.String("error", err.Error()))
+			uc.log.Error("failed to get my events", slog.String("error", err.Error()))
 		}
-		return nil, fmt.Errorf("failed to get my events: %w", err)
+		return nil, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
 	}
 
 	if uc.log != nil {
 		uc.log.Info("my events returned successfully",
 			slog.String("user_id", userID.String()),
-			slog.Int("count", len(events)))
+			slog.Int("count", len(events)),
+		)
 	}
-
 	return events, nil
-}
-
-// stringPtr — маленькая вспомогательная функция
-func stringPtr(s string) *string {
-	return &s
 }

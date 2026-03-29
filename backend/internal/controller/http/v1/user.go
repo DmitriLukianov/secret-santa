@@ -31,7 +31,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req request.CreateUserRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
 
@@ -44,7 +44,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.uc.Create(r.Context(), input)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -55,13 +55,13 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	user, err := h.uc.GetByID(r.Context(), id)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -71,15 +71,18 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		Email: user.Email,
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
 func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.uc.GetAll(r.Context())
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
 
 	var resp []response.UserResponse
 	for _, u := range users {
@@ -97,13 +100,13 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	var req request.UpdateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
 
@@ -114,7 +117,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	err = h.uc.Update(r.Context(), id, input)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -125,13 +128,13 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	err = h.uc.Delete(r.Context(), id)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -141,13 +144,13 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) GetMyEvents(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	events, err := h.eventUC.GetMyEvents(r.Context(), userID) // ← используем eventUC
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 

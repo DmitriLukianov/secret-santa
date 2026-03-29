@@ -23,30 +23,30 @@ func NewAssignmentHandler(uc usecase.AssignmentUseCase) *AssignmentHandler {
 }
 
 func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
-
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	err = h.uc.Draw(r.Context(), eventID, userID)
 	if err != nil {
 		if errors.Is(err, definitions.ErrNotOrganizer) {
-			writeHTTPError(w, definitions.ErrForbidden)
+			response.WriteHTTPError(w, definitions.ErrForbidden)
 			return
 		}
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Жеребьёвка успешно проведена",
@@ -56,22 +56,24 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
 
 	eventIDStr := chi.URLParam(r, "eventId")
 	eventID, err := uuid.Parse(eventIDStr)
 	if err != nil {
-		writeHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
 		return
 	}
 
 	assignments, err := h.uc.GetByEvent(r.Context(), eventID, userID)
 	if err != nil {
-		writeHTTPError(w, err)
+		response.WriteHTTPError(w, err)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
 
 	var resp []response.AssignmentResponse
 	for _, a := range assignments {
@@ -84,6 +86,5 @@ func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
