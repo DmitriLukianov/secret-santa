@@ -74,9 +74,9 @@ func (e Event) CanTransitionTo(newStatus EventStatus) bool {
 	case EventStatusInvitationOpen:
 		return newStatus == EventStatusRegistrationClosed || newStatus == EventStatusCancelled
 	case EventStatusRegistrationClosed:
-		return newStatus == EventStatusDrawingPending || newStatus == EventStatusCancelled
+		return newStatus == EventStatusDrawingPending || newStatus == EventStatusDrawingDone || newStatus == EventStatusCancelled // ← добавили drawing_done
 	case EventStatusDrawingPending:
-		return newStatus == EventStatusDrawingDone
+		return newStatus == EventStatusDrawingDone || newStatus == EventStatusCancelled
 	case EventStatusDrawingDone:
 		return newStatus == EventStatusActive || newStatus == EventStatusCancelled
 	case EventStatusActive:

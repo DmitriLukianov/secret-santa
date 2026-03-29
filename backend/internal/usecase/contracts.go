@@ -67,3 +67,9 @@ type AssignmentUseCase interface {
 type ParticipantRepository interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
 }
+
+// InvitationUseCase — публичный интерфейс приглашений
+type InvitationUseCase interface {
+	GenerateInvite(ctx context.Context, input dto.CreateInvitationInput, organizerID uuid.UUID) (dto.InvitationResponse, error)
+	JoinByInvite(ctx context.Context, input dto.JoinByInvitationInput) error
+}

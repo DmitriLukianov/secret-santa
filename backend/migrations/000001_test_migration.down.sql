@@ -7,5 +7,5 @@ DROP TABLE IF EXISTS assignments;
 DROP TABLE IF EXISTS participants;
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS users;
-
+DROP TABLE IF EXISTS invitations;
 -- +goose StatementEnd

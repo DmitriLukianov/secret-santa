@@ -15,6 +15,7 @@ import (
 	postgres "secret-santa-backend/internal/repository/postgres"
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
 	eventrepo "secret-santa-backend/internal/repository/postgres/event"
+	invitationrepo "secret-santa-backend/internal/repository/postgres/invitation"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
 	userrepo "secret-santa-backend/internal/repository/postgres/user"
 	wishlistrepo "secret-santa-backend/internal/repository/postgres/wishlist"
@@ -22,6 +23,7 @@ import (
 	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
 	authusecase "secret-santa-backend/internal/usecase/auth"
 	eventusecase "secret-santa-backend/internal/usecase/event"
+	invitationusecase "secret-santa-backend/internal/usecase/invitation"
 	participantusecase "secret-santa-backend/internal/usecase/participant"
 	userusecase "secret-santa-backend/internal/usecase/user"
 	wishlistusecase "secret-santa-backend/internal/usecase/wishlist"
@@ -52,22 +54,25 @@ func New() *App {
 	participantRepo := participantrepo.New(db)
 	assignmentRepo := assignmentrepo.New(db)
 	wishlistRepo := wishlistrepo.New(db)
+	invitationRepo := invitationrepo.New(db)
 
 	// UseCases
 	userUC := userusecase.NewWithLogger(userRepo, log)
-	authUC := authusecase.NewWithLogger(userUC, log) // ← добавили WithLogger
+	authUC := authusecase.NewWithLogger(userUC, log)
 
 	eventUC := eventusecase.NewWithLogger(eventRepo, log)
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
 	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventUC, log)
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, assignmentUC, log)
+	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventUC, participantUC, log)
 
-	// ==================== Handlers ====================
+	// Handlers
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
+	invitationHandler := v1.NewInvitationHandler(invitationUC)
 
 	// Auth
 	jwtManager, err := oauth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
@@ -95,7 +100,6 @@ func New() *App {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.NewAuthMiddleware(jwtManager).Handler)
 
-		// ... (весь остальной роутинг остаётся как у тебя был)
 		r.Route("/users", func(r chi.Router) {
 			r.Post("/", userHandler.CreateUser)
 			r.Get("/", userHandler.GetUsers)
@@ -135,6 +139,14 @@ func New() *App {
 			r.Post("/", wishlistHandler.AddItem)
 			r.Get("/", wishlistHandler.GetItems)
 		})
+
+		// ==================== ПРИГЛАШЕНИЯ ====================
+		r.Route("/invitations", func(r chi.Router) {
+			r.Post("/generate", invitationHandler.GenerateInvite)
+		})
+
+		// Присоединиться по ссылке (требует авторизацию)
+		r.Post("/invite/join", invitationHandler.JoinByInvite)
 	})
 
 	return &App{

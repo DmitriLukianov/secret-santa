@@ -42,7 +42,12 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 			response.WriteHTTPError(w, definitions.ErrForbidden)
 			return
 		}
-		response.WriteHTTPError(w, err)
+		if errors.Is(err, definitions.ErrInvalidEventState) ||
+			errors.Is(err, definitions.ErrNotEnoughParticipants) {
+			response.WriteHTTPError(w, err) // вернёт 400
+			return
+		}
+		response.WriteHTTPError(w, err) // остальные ошибки — 500
 		return
 	}
 
