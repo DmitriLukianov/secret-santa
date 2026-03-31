@@ -1,0 +1,5548 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: out
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+cmd/
+  app/
+    main.go
+internal/
+  app/
+    app.go
+  config/
+    config.go
+  controller/
+    http/
+      v1/
+        request/
+          event.go
+          invitation.go
+          user.go
+          wishlist.go
+        response/
+          assignment.go
+          error.go
+          event.go
+          mapper.go
+          participant.go
+          user.go
+          wishlist.go
+        assignment.go
+        auth.go
+        event.go
+        invitation.go
+        participant.go
+        user.go
+        wishlist.go
+  definitions/
+    errors.go
+  dto/
+    assignment.go
+    event.go
+    invitation.go
+    participant.go
+    user.go
+    wishlist.go
+  entity/
+    assignment.go
+    event.go
+    invitation.go
+    participant.go
+    user.go
+    wishlist.go
+  logger/
+    logger.go
+  middleware/
+    auth.go
+    recovery.go
+    timeout.go
+  oauth/
+    github.go
+    jwt.go
+    provider.go
+  repository/
+    postgres/
+      assignment/
+        mapper.go
+        queries.go
+        repo.go
+      event/
+        mapper.go
+        queries.go
+        repo.go
+      invitation/
+        repo.go
+      participant/
+        mapper.go
+        queries.go
+        repo.go
+      user/
+        mapper.go
+        queries.go
+        repo.go
+      wishlist/
+        mapper.go
+        queries.go
+        repo.go
+      db.go
+  usecase/
+    assignment/
+      interfaces.go
+      usecase.go
+    auth/
+      usecase.go
+    event/
+      interfaces.go
+      usecase.go
+    invitation/
+      interfaces.go
+      usecase.go
+    participant/
+      interfaces.go
+      usecase.go
+    user/
+      interfaces.go
+      usecase.go
+    wishlist/
+      interfaces.go
+      usecase.go
+    contracts.go
+migrations/
+  000001_test_migration.down.sql
+  000001_test_migration.up.sql
+.env.example
+.gitignore
+docker-compose.yaml
+go.mod
+Makefile
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="cmd/app/main.go">
+package main
+
+import (
+	"log"
+
+	"secret-santa-backend/internal/app"
+)
+
+func main() {
+	app := app.New()
+
+	if err := app.Run(); err != nil {
+		log.Fatal(err)
+	}
+}
+</file>
+
+<file path="internal/app/app.go">
+package app
+
+import (
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"secret-santa-backend/internal/config"
+	"secret-santa-backend/internal/logger"
+	"secret-santa-backend/internal/middleware"
+
+	"secret-santa-backend/internal/oauth"
+
+	postgres "secret-santa-backend/internal/repository/postgres"
+	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
+	eventrepo "secret-santa-backend/internal/repository/postgres/event"
+	invitationrepo "secret-santa-backend/internal/repository/postgres/invitation"
+	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
+	userrepo "secret-santa-backend/internal/repository/postgres/user"
+	wishlistrepo "secret-santa-backend/internal/repository/postgres/wishlist"
+
+	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
+	authusecase "secret-santa-backend/internal/usecase/auth"
+	eventusecase "secret-santa-backend/internal/usecase/event"
+	invitationusecase "secret-santa-backend/internal/usecase/invitation"
+	participantusecase "secret-santa-backend/internal/usecase/participant"
+	userusecase "secret-santa-backend/internal/usecase/user"
+	wishlistusecase "secret-santa-backend/internal/usecase/wishlist"
+
+	v1 "secret-santa-backend/internal/controller/http/v1"
+)
+
+type App struct {
+	cfg    *config.Config
+	log    *slog.Logger
+	server *http.Server
+}
+
+func New() *App {
+	cfg := config.Load()
+
+	log := logger.New(cfg.LogLevel, cfg.AppEnv)
+
+	db, err := postgres.NewDB(cfg.DatabaseURL)
+	if err != nil {
+		log.Error("failed to connect to database", slog.String("error", err.Error()))
+		panic(err)
+	}
+
+	// ==================== Репозитории ====================
+	userRepo := userrepo.New(db)
+	eventRepo := eventrepo.New(db)
+	participantRepo := participantrepo.New(db)
+	assignmentRepo := assignmentrepo.New(db)
+	wishlistRepo := wishlistrepo.New(db)
+	invitationRepo := invitationrepo.New(db)
+
+	// ==================== UseCases ====================
+	userUC := userusecase.NewWithLogger(userRepo, log)
+	authUC := authusecase.NewWithLogger(userUC, log)
+
+	// 🔥 ИСПРАВЛЕНО: теперь передаём participantRepo
+	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
+
+	participantUC := participantusecase.NewWithLogger(participantRepo, log)
+
+	assignmentUC := assignmentusecase.NewWithLogger(
+		assignmentRepo,
+		participantRepo,
+		eventRepo,
+		log,
+	)
+
+	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
+
+	invitationUC := invitationusecase.NewWithLogger(
+		invitationRepo,
+		eventRepo,
+		participantUC,
+		log,
+	)
+
+	// ==================== Handlers ====================
+	userHandler := v1.NewUserHandler(userUC, eventUC)
+	eventHandler := v1.NewEventHandler(eventUC)
+	participantHandler := v1.NewParticipantHandler(participantUC)
+	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
+	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
+	invitationHandler := v1.NewInvitationHandler(invitationUC)
+
+	// ==================== Auth ====================
+	jwtManager, err := oauth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
+	if err != nil {
+		log.Error("failed to create JWT manager", slog.String("error", err.Error()))
+		panic(err)
+	}
+
+	authProvider, err := oauth.New(cfg)
+	if err != nil {
+		log.Error("failed to create oauth provider", slog.String("error", err.Error()))
+		panic(err)
+	}
+
+	authHandler := v1.NewAuthHandler(authProvider, jwtManager, authUC)
+
+	// ==================== Router ====================
+	r := chi.NewRouter()
+
+	r.Use(middleware.RecoveryMiddleware)
+	r.Use(middleware.TimeoutMiddleware(10 * time.Second))
+
+	r.Route("/auth", func(r chi.Router) {
+		r.Get("/login", authHandler.Login)
+		r.Get("/callback", authHandler.Callback)
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.NewAuthMiddleware(jwtManager, log).Handler)
+
+		r.Route("/users", func(r chi.Router) {
+			r.Post("/", userHandler.CreateUser)
+			r.Get("/", userHandler.GetUsers)
+			r.Get("/{id}", userHandler.GetUserByID)
+			r.Put("/{id}", userHandler.UpdateUser)
+			r.Delete("/{id}", userHandler.DeleteUser)
+			r.Get("/me/events", userHandler.GetMyEvents)
+		})
+
+		r.Route("/events", func(r chi.Router) {
+			r.Post("/", eventHandler.CreateEvent)
+			r.Get("/", eventHandler.GetEvents)
+			r.Get("/{id}", eventHandler.GetEventByID)
+			r.Put("/{id}", eventHandler.UpdateEvent)
+			r.Delete("/{id}", eventHandler.DeleteEvent)
+
+			r.Post("/{id}/open-invitation", eventHandler.OpenInvitation)
+			r.Post("/{id}/close-registration", eventHandler.CloseRegistration)
+			r.Post("/{id}/start-drawing", eventHandler.StartDrawing)
+			r.Post("/{id}/finish", eventHandler.FinishEvent)
+			r.Post("/{id}/cancel", eventHandler.CancelEvent)
+
+			r.Post("/{eventId}/participants", participantHandler.Add)
+			r.Get("/{eventId}/participants", participantHandler.GetByEvent)
+			r.Post("/{eventId}/assign", assignmentHandler.Draw)
+			r.Get("/{eventId}/assignments", assignmentHandler.GetByEvent)
+		})
+
+		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
+		r.Delete("/participants/{id}", participantHandler.Delete)
+
+		r.Route("/users/{userId}/wishlist", func(r chi.Router) {
+			r.Post("/", wishlistHandler.Create)
+			r.Get("/", wishlistHandler.GetByUser)
+		})
+
+		r.Route("/wishlists/{participantId}", func(r chi.Router) {
+			r.Get("/", wishlistHandler.GetByParticipant)
+		})
+
+		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {
+			r.Post("/", wishlistHandler.AddItem)
+			r.Get("/", wishlistHandler.GetItems)
+		})
+
+		r.Route("/invitations", func(r chi.Router) {
+			r.Post("/generate", invitationHandler.GenerateInvite)
+		})
+
+		r.Post("/invite/join", invitationHandler.JoinByInvite)
+	})
+
+	return &App{
+		cfg: cfg,
+		log: log,
+		server: &http.Server{
+			Addr:    ":" + cfg.AppPort,
+			Handler: r,
+		},
+	}
+}
+
+func (a *App) Run() error {
+	a.log.Info("🚀 Server running on :" + a.cfg.AppPort)
+	return a.server.ListenAndServe()
+}
+</file>
+
+<file path="internal/config/config.go">
+package config
+
+import (
+	"log"
+	"os"
+	"time"
+
+	"github.com/joho/godotenv"
+)
+
+type Config struct {
+	// Приложение
+	AppPort  string `env:"APP_PORT" envDefault:"8080"`
+	AppEnv   string `env:"APP_ENV" envDefault:"local"`
+	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
+
+	// База данных
+	DatabaseURL string `env:"DATABASE_URL"`
+
+	// JWT
+	JWTSecret string        `env:"JWT_SECRET"`
+	JWTTTL    time.Duration `env:"JWT_TTL" envDefault:"24h"`
+
+	// OAuth (поддержка нескольких провайдеров)
+	OAuthProvider      string `env:"OAUTH_PROVIDER" envDefault:"github"`
+	GithubClientID     string `env:"GITHUB_CLIENT_ID"`
+	GithubClientSecret string `env:"GITHUB_CLIENT_SECRET"`
+	GithubRedirectURL  string `env:"GITHUB_REDIRECT_URL"`
+}
+
+func Load() *Config {
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using system environment variables")
+	}
+
+	cfg := &Config{
+		AppPort:            getEnv("APP_PORT", "8080"),
+		AppEnv:             getEnv("APP_ENV", "local"),
+		LogLevel:           getEnv("LOG_LEVEL", "info"),
+		DatabaseURL:        getEnv("DATABASE_URL", ""),
+		JWTSecret:          getEnv("JWT_SECRET", ""),
+		JWTTTL:             parseDuration(getEnv("JWT_TTL", "24h")),
+		OAuthProvider:      getEnv("OAUTH_PROVIDER", "github"),
+		GithubClientID:     getEnv("GITHUB_CLIENT_ID", ""),
+		GithubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
+		GithubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", ""),
+	}
+
+	// Простая валидация обязательных полей
+	if cfg.DatabaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
+	if cfg.JWTSecret == "" {
+		log.Fatal("JWT_SECRET is required and must be at least 32 characters")
+	}
+	if len(cfg.JWTSecret) < 32 {
+		log.Fatal("JWT_SECRET must be at least 32 characters long")
+	}
+
+	return cfg
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func parseDuration(s string) time.Duration {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		log.Printf("Warning: invalid JWT_TTL '%s', using default 24h", s)
+		return 24 * time.Hour
+	}
+	return d
+}
+</file>
+
+<file path="internal/controller/http/v1/request/event.go">
+package request
+
+import "time"
+
+type CreateEventRequest struct {
+	Title           string     `json:"title" validate:"required,min=3"`
+	Description     *string    `json:"description"`
+	Rules           *string    `json:"rules"`
+	Recommendations *string    `json:"recommendations"`
+	StartDate       time.Time  `json:"startDate" validate:"required"`
+	DrawDate        *time.Time `json:"drawDate"`
+	EndDate         time.Time  `json:"endDate" validate:"required"`
+	MaxParticipants int        `json:"maxParticipants" validate:"min=2"`
+}
+
+type UpdateEventRequest struct {
+	Title           *string    `json:"title"`
+	Description     *string    `json:"description"`
+	Rules           *string    `json:"rules"`
+	Recommendations *string    `json:"recommendations"`
+	StartDate       *time.Time `json:"startDate"`
+	DrawDate        *time.Time `json:"drawDate"`
+	EndDate         *time.Time `json:"endDate"`
+	MaxParticipants *int       `json:"maxParticipants"`
+}
+
+type ChangeEventStatusRequest struct {
+	Status string `json:"status" validate:"required"`
+}
+</file>
+
+<file path="internal/controller/http/v1/request/invitation.go">
+package request
+
+import "github.com/google/uuid"
+
+type CreateInvitationRequest struct {
+	EventID   uuid.UUID `json:"eventId" validate:"required"`
+	ExpiresIn string    `json:"expiresIn,omitempty"` // ← теперь string
+}
+
+type JoinByInvitationRequest struct {
+	Token string `json:"token" validate:"required"`
+}
+</file>
+
+<file path="internal/controller/http/v1/request/user.go">
+package request
+
+type CreateUserRequest struct {
+	Name          string `json:"name" validate:"required,min=2"`
+	Email         string `json:"email" validate:"required,email"`
+	OAuthID       string `json:"oauthId" validate:"required"`
+	OAuthProvider string `json:"oauthProvider" validate:"required,oneof=github vk google"`
+}
+
+type UpdateUserRequest struct {
+	Name  *string `json:"name" validate:"omitempty,min=2"`
+	Email *string `json:"email" validate:"omitempty,email"`
+}
+</file>
+
+<file path="internal/controller/http/v1/request/wishlist.go">
+package request
+
+type CreateWishlistRequest struct {
+	EventID    string `json:"eventId" validate:"required,uuid"`
+	Visibility string `json:"visibility" validate:"required,oneof=public santa_only"`
+}
+
+type CreateWishlistItemRequest struct {
+	Title    string `json:"title" validate:"required"`
+	Link     string `json:"link,omitempty"`
+	ImageURL string `json:"imageURL,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+}
+</file>
+
+<file path="internal/controller/http/v1/response/assignment.go">
+package response
+
+import "time"
+
+type AssignmentResponse struct {
+	ID         string    `json:"id"`
+	EventID    string    `json:"eventId"`
+	GiverID    string    `json:"giverId"`
+	ReceiverID string    `json:"receiverId"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+</file>
+
+<file path="internal/controller/http/v1/response/error.go">
+package response
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"secret-santa-backend/internal/definitions"
+)
+
+// ErrorResponse — единый формат ошибки для всего API
+type ErrorResponse struct {
+	Error string `json:"error"`
+	Code  int    `json:"code"`
+}
+
+// WriteHTTPError — централизованная обработка ошибок
+func WriteHTTPError(w http.ResponseWriter, err error) {
+	if err == nil {
+		return
+	}
+
+	status := http.StatusInternalServerError
+	message := "internal server error" // по умолчанию безопасное сообщение
+
+	switch {
+	// ==================== 404 ====================
+	case errors.Is(err, definitions.ErrNotFound),
+		errors.Is(err, definitions.ErrEventNotFound),
+		errors.Is(err, definitions.ErrWishlistNotFound),
+		errors.Is(err, definitions.ErrParticipantNotFound),
+		errors.Is(err, definitions.ErrAssignmentNotFound),
+		errors.Is(err, definitions.ErrUserNotFound):
+		status = http.StatusNotFound
+		message = err.Error()
+
+	// ==================== 403 ====================
+	case errors.Is(err, definitions.ErrForbidden),
+		errors.Is(err, definitions.ErrNotOrganizer),
+		errors.Is(err, definitions.ErrNotSanta),
+		errors.Is(err, definitions.ErrWishlistVisibilityForbidden):
+		status = http.StatusForbidden
+		message = err.Error()
+
+	// ==================== 409 ====================
+	case errors.Is(err, definitions.ErrConflict),
+		errors.Is(err, definitions.ErrAlreadyParticipating),
+		errors.Is(err, definitions.ErrDuplicateParticipant),
+		errors.Is(err, definitions.ErrEventAlreadyFinished):
+		status = http.StatusConflict
+		message = err.Error()
+
+	// ==================== 400 ====================
+	case errors.Is(err, definitions.ErrInvalidUUID),
+		errors.Is(err, definitions.ErrInvalidOAuthCode),
+		errors.Is(err, definitions.ErrMissingOAuthCode),
+		errors.Is(err, definitions.ErrInvalidUserInput),
+		errors.Is(err, definitions.ErrInvalidOAuthUserInfo),
+		errors.Is(err, definitions.ErrInvalidEventState),
+		errors.Is(err, definitions.ErrNotEnoughParticipants),
+		errors.Is(err, definitions.ErrInvalidWishlistVisibility):
+		status = http.StatusBadRequest
+		message = err.Error()
+
+	// ==================== fallback ====================
+	default:
+		// логично НЕ отдавать внутренние ошибки клиенту
+		status = http.StatusInternalServerError
+	}
+
+	writeJSONError(w, status, message)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+
+	if err := json.NewEncoder(w).Encode(ErrorResponse{
+		Error: message,
+		Code:  status,
+	}); err != nil {
+		// fallback — если даже encode упал
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+</file>
+
+<file path="internal/controller/http/v1/response/event.go">
+package response
+
+import (
+	"secret-santa-backend/internal/entity"
+	"time"
+)
+
+type EventResponse struct {
+	ID              string     `json:"id"`
+	Title           string     `json:"title"`
+	Description     *string    `json:"description,omitempty"`
+	Rules           *string    `json:"rules,omitempty"`
+	Recommendations *string    `json:"recommendations,omitempty"`
+	OrganizerID     string     `json:"organizerId"`
+	StartDate       time.Time  `json:"startDate"`
+	DrawDate        *time.Time `json:"drawDate,omitempty"`
+	EndDate         time.Time  `json:"endDate"`
+	Status          string     `json:"status"`
+	MaxParticipants int        `json:"maxParticipants"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
+}
+
+func EventResponseFromEntity(e entity.Event) EventResponse {
+	return EventResponse{
+		ID:              e.ID.String(),
+		Title:           e.Title,
+		Description:     e.Description,
+		Rules:           e.Rules,
+		Recommendations: e.Recommendations,
+		OrganizerID:     e.OrganizerID.String(),
+		StartDate:       e.StartDate,
+		DrawDate:        e.DrawDate,
+		EndDate:         e.EndDate,
+		Status:          string(e.Status),
+		MaxParticipants: e.MaxParticipants,
+		CreatedAt:       e.CreatedAt,
+		UpdatedAt:       e.UpdatedAt,
+	}
+}
+</file>
+
+<file path="internal/controller/http/v1/response/mapper.go">
+package response
+
+import "secret-santa-backend/internal/entity"
+
+// =============================================
+// Event
+// =============================================
+func EventToResponse(e *entity.Event) EventResponse {
+	if e == nil {
+		return EventResponse{}
+	}
+	return EventResponse{
+		ID:              e.ID.String(),
+		Title:           e.Title,
+		Description:     e.Description,
+		Rules:           e.Rules,
+		Recommendations: e.Recommendations,
+		OrganizerID:     e.OrganizerID.String(),
+		StartDate:       e.StartDate,
+		DrawDate:        e.DrawDate,
+		EndDate:         e.EndDate,
+		Status:          string(e.Status),
+		MaxParticipants: e.MaxParticipants,
+		CreatedAt:       e.CreatedAt,
+		UpdatedAt:       e.UpdatedAt,
+	}
+}
+
+func EventsToResponse(events []entity.Event) []EventResponse {
+	if events == nil {
+		return nil
+	}
+
+	resp := make([]EventResponse, len(events))
+	for i := range events {
+		resp[i] = EventToResponse(&events[i]) // ✅ FIX
+	}
+	return resp
+}
+
+// =============================================
+// User
+// =============================================
+func UserToResponse(u *entity.User) UserResponse {
+	if u == nil {
+		return UserResponse{}
+	}
+	return UserResponse{
+		ID:    u.ID.String(),
+		Name:  u.Name,
+		Email: u.Email,
+	}
+}
+
+func UsersToResponse(users []*entity.User) []UserResponse {
+	if users == nil {
+		return nil
+	}
+
+	resp := make([]UserResponse, len(users))
+	for i, u := range users {
+		resp[i] = UserToResponse(u)
+	}
+	return resp
+}
+
+// =============================================
+// Participant
+// =============================================
+func ParticipantToResponse(p *entity.Participant) ParticipantResponse {
+	if p == nil {
+		return ParticipantResponse{}
+	}
+	return ParticipantResponse{
+		ID:         p.ID.String(),
+		EventID:    p.EventID.String(),
+		UserID:     p.UserID.String(),
+		Role:       p.Role,
+		GiftSent:   p.GiftSent,
+		GiftSentAt: p.GiftSentAt,
+		CreatedAt:  p.CreatedAt,
+	}
+}
+
+func ParticipantsToResponse(participants []*entity.Participant) []ParticipantResponse {
+	if participants == nil {
+		return nil
+	}
+
+	resp := make([]ParticipantResponse, len(participants))
+	for i, p := range participants {
+		resp[i] = ParticipantToResponse(p)
+	}
+	return resp
+}
+
+// =============================================
+// Wishlist + WishlistItem
+// =============================================
+func WishlistToResponse(w *entity.Wishlist) WishlistResponse {
+	if w == nil {
+		return WishlistResponse{}
+	}
+	return WishlistResponse{
+		ID:            w.ID.String(),
+		ParticipantID: w.ParticipantID.String(),
+		Visibility:    w.Visibility,
+		CreatedAt:     w.CreatedAt,
+		UpdatedAt:     w.UpdatedAt,
+	}
+}
+
+func WishlistItemToResponse(item *entity.WishlistItem) WishlistItemResponse {
+	if item == nil {
+		return WishlistItemResponse{}
+	}
+	return WishlistItemResponse{
+		ID:        item.ID.String(),
+		Title:     item.Title,
+		Link:      item.Link,
+		ImageURL:  item.ImageURL,
+		Comment:   item.Comment,
+		CreatedAt: item.CreatedAt,
+	}
+}
+
+func WishlistItemsToResponse(items []*entity.WishlistItem) []WishlistItemResponse {
+	if items == nil {
+		return nil
+	}
+
+	resp := make([]WishlistItemResponse, len(items))
+	for i, item := range items {
+		resp[i] = WishlistItemToResponse(item)
+	}
+	return resp
+}
+
+// =============================================
+// Assignment
+// =============================================
+func AssignmentToResponse(a *entity.Assignment) AssignmentResponse {
+	if a == nil {
+		return AssignmentResponse{}
+	}
+	return AssignmentResponse{
+		ID:         a.ID.String(),
+		EventID:    a.EventID.String(),
+		GiverID:    a.GiverID.String(),
+		ReceiverID: a.ReceiverID.String(),
+		CreatedAt:  a.CreatedAt,
+	}
+}
+
+func AssignmentsToResponse(assignments []*entity.Assignment) []AssignmentResponse {
+	if assignments == nil {
+		return nil
+	}
+
+	resp := make([]AssignmentResponse, len(assignments))
+	for i, a := range assignments {
+		resp[i] = AssignmentToResponse(a)
+	}
+	return resp
+}
+</file>
+
+<file path="internal/controller/http/v1/response/participant.go">
+package response
+
+import "time"
+
+type ParticipantResponse struct {
+	ID         string     `json:"id"`
+	EventID    string     `json:"eventId"`
+	UserID     string     `json:"userId"`
+	Role       string     `json:"role"`
+	GiftSent   bool       `json:"giftSent"`
+	GiftSentAt *time.Time `json:"giftSentAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+}
+</file>
+
+<file path="internal/controller/http/v1/response/user.go">
+package response
+
+type UserResponse struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+</file>
+
+<file path="internal/controller/http/v1/response/wishlist.go">
+package response
+
+import "time"
+
+type WishlistResponse struct {
+	ID            string    `json:"id"`
+	ParticipantID string    `json:"participantId"`
+	Visibility    string    `json:"visibility"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
+type WishlistItemResponse struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Link      *string   `json:"link"`
+	ImageURL  *string   `json:"imageUrl"`
+	Comment   *string   `json:"comment"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+</file>
+
+<file path="internal/controller/http/v1/assignment.go">
+package v1
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/usecase"
+)
+
+type AssignmentHandler struct {
+	uc usecase.AssignmentUseCase
+}
+
+func NewAssignmentHandler(uc usecase.AssignmentUseCase) *AssignmentHandler {
+	return &AssignmentHandler{uc: uc}
+}
+
+func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	if err := h.uc.Draw(r.Context(), eventID, userID); err != nil {
+		response.WriteHTTPError(w, err) // ✅ ВСЁ УБРАЛИ
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Жеребьёвка успешно проведена",
+	})
+}
+
+func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	assignments, err := h.uc.GetByEvent(r.Context(), eventID, userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	var resp []response.AssignmentResponse
+	for _, a := range assignments {
+		resp = append(resp, response.AssignmentResponse{
+			ID:         a.ID.String(),
+			EventID:    a.EventID.String(),
+			GiverID:    a.GiverID.String(),
+			ReceiverID: a.ReceiverID.String(),
+			CreatedAt:  a.CreatedAt,
+		})
+	}
+
+	json.NewEncoder(w).Encode(resp)
+}
+</file>
+
+<file path="internal/controller/http/v1/auth.go">
+package v1
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/oauth"
+	authuc "secret-santa-backend/internal/usecase/auth"
+)
+
+type AuthHandler struct {
+	provider oauth.Provider
+	jwt      *oauth.JWTManager
+	uc       *authuc.UseCase
+}
+
+func NewAuthHandler(provider oauth.Provider, jwt *oauth.JWTManager, uc *authuc.UseCase) *AuthHandler {
+	return &AuthHandler{
+		provider: provider,
+		jwt:      jwt,
+		uc:       uc,
+	}
+}
+
+func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	state := "ss-" + time.Now().Format("20060102150405")
+	url := h.provider.GetAuthURL(state)
+
+	w.Header().Set("Location", url)
+	w.WriteHeader(http.StatusFound)
+}
+
+func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		response.WriteHTTPError(w, definitions.ErrInvalidOAuthCode)
+		return
+	}
+
+	token, err := h.provider.Config().Exchange(ctx, code)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	userInfo, err := h.provider.GetUserInfo(ctx, token)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	userID, err := h.uc.LoginWithOAuth(ctx, userInfo)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	jwtToken, err := h.jwt.GenerateToken(userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"token": jwtToken})
+}
+</file>
+
+<file path="internal/controller/http/v1/event.go">
+package v1
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"secret-santa-backend/internal/controller/http/v1/request"
+	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/usecase"
+)
+
+type EventHandler struct {
+	uc usecase.EventUseCase
+}
+
+func NewEventHandler(uc usecase.EventUseCase) *EventHandler {
+	return &EventHandler{uc: uc}
+}
+
+// ==================== CRUD ====================
+
+func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	var req request.CreateEventRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	input := dto.CreateEventInput{
+		Title:           req.Title,
+		Description:     req.Description,
+		Rules:           req.Rules,
+		Recommendations: req.Recommendations,
+		StartDate:       req.StartDate,
+		DrawDate:        req.DrawDate,
+		EndDate:         req.EndDate,
+		MaxParticipants: req.MaxParticipants,
+	}
+
+	event, err := h.uc.Create(r.Context(), input, userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response.EventToResponse(&event))
+}
+
+func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	event, err := h.uc.GetByID(r.Context(), id)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.EventToResponse(event))
+}
+
+func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
+	events, err := h.uc.GetAll(r.Context())
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.EventsToResponse(events))
+}
+
+func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	var req request.UpdateEventRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	input := dto.UpdateEventInput{
+		Title:           req.Title,
+		Description:     req.Description,
+		Rules:           req.Rules,
+		Recommendations: req.Recommendations,
+		StartDate:       req.StartDate,
+		DrawDate:        req.DrawDate,
+		EndDate:         req.EndDate,
+		MaxParticipants: req.MaxParticipants,
+	}
+
+	if err := h.uc.Update(r.Context(), id, input); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	if err := h.uc.Delete(r.Context(), id); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ==================== Статусы ====================
+
+func (h *EventHandler) OpenInvitation(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.OpenInvitation)
+}
+
+func (h *EventHandler) CloseRegistration(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.CloseRegistration)
+}
+
+func (h *EventHandler) StartDrawing(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.StartDrawing)
+}
+
+func (h *EventHandler) FinishEvent(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.Finish)
+}
+
+func (h *EventHandler) CancelEvent(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.Cancel)
+}
+
+func (h *EventHandler) changeStatus(
+	w http.ResponseWriter,
+	r *http.Request,
+	action func(ctx context.Context, id, userID uuid.UUID) error,
+) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	if err := action(r.Context(), id, userID); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Статус события успешно изменён"})
+}
+</file>
+
+<file path="internal/controller/http/v1/invitation.go">
+package v1
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"secret-santa-backend/internal/controller/http/v1/request"
+	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/usecase"
+)
+
+type InvitationHandler struct {
+	uc usecase.InvitationUseCase
+}
+
+func NewInvitationHandler(uc usecase.InvitationUseCase) *InvitationHandler {
+	return &InvitationHandler{uc: uc}
+}
+
+// GenerateInvite — только для организатора
+func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	var req request.CreateInvitationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	// Парсим строку "148h" → time.Duration
+	expiresIn := 7 * 24 * time.Hour // по умолчанию 7 дней
+	if req.ExpiresIn != "" {
+		if d, err := time.ParseDuration(req.ExpiresIn); err == nil {
+			expiresIn = d
+		} else {
+			response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+			return
+		}
+	}
+
+	input := dto.CreateInvitationInput{
+		EventID:   req.EventID,
+		ExpiresIn: expiresIn,
+	}
+
+	resp, err := h.uc.GenerateInvite(r.Context(), input, userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(resp)
+}
+
+// JoinByInvite — публичный
+func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request) {
+	var req request.JoinByInvitationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	input := dto.JoinByInvitationInput{
+		Token:  req.Token,
+		UserID: userID,
+	}
+
+	if err := h.uc.JoinByInvite(r.Context(), input); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Вы успешно присоединились к событию"})
+}
+</file>
+
+<file path="internal/controller/http/v1/participant.go">
+package v1
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/entity"
+	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/usecase"
+)
+
+type ParticipantHandler struct {
+	uc usecase.ParticipantUseCase
+}
+
+func NewParticipantHandler(uc usecase.ParticipantUseCase) *ParticipantHandler {
+	return &ParticipantHandler{uc: uc}
+}
+
+func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	participant, err := h.uc.Create(r.Context(), eventID, userID, entity.ParticipantRoleParticipant)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	resp := response.ParticipantResponse{
+		ID:        participant.ID.String(),
+		EventID:   participant.EventID.String(),
+		UserID:    participant.UserID.String(),
+		Role:      participant.Role,
+		GiftSent:  participant.GiftSent,
+		CreatedAt: participant.CreatedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	participants, err := h.uc.GetByEvent(r.Context(), eventID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	var resp []response.ParticipantResponse
+	for _, p := range participants {
+		resp = append(resp, response.ParticipantResponse{
+			ID:        p.ID.String(),
+			EventID:   p.EventID.String(),
+			UserID:    p.UserID.String(),
+			Role:      p.Role,
+			GiftSent:  p.GiftSent,
+			CreatedAt: p.CreatedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	err = h.uc.MarkGiftSent(r.Context(), id)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	err = h.uc.Delete(r.Context(), id)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+</file>
+
+<file path="internal/controller/http/v1/user.go">
+package v1
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"secret-santa-backend/internal/controller/http/v1/request"
+	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/usecase"
+)
+
+type UserHandler struct {
+	uc      usecase.UserUseCase
+	eventUC usecase.EventUseCase // ← НОВОЕ поле
+}
+
+func NewUserHandler(uc usecase.UserUseCase, eventUC usecase.EventUseCase) *UserHandler {
+	return &UserHandler{
+		uc:      uc,
+		eventUC: eventUC,
+	}
+}
+
+func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	var req request.CreateUserRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	input := dto.CreateUserInput{
+		Name:          req.Name,
+		Email:         req.Email,
+		OAuthID:       req.OAuthID,
+		OAuthProvider: req.OAuthProvider,
+	}
+
+	_, err := h.uc.Create(r.Context(), input)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	user, err := h.uc.GetByID(r.Context(), id)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	resp := response.UserResponse{
+		ID:    user.ID.String(),
+		Name:  user.Name,
+		Email: user.Email,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := h.uc.GetAll(r.Context())
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	var resp []response.UserResponse
+	for _, u := range users {
+		resp = append(resp, response.UserResponse{
+			ID:    u.ID.String(),
+			Name:  u.Name,
+			Email: u.Email,
+		})
+	}
+
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	var req request.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	input := dto.UpdateUserInput{
+		Name:  req.Name,
+		Email: req.Email,
+	}
+
+	err = h.uc.Update(r.Context(), id, input)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	err = h.uc.Delete(r.Context(), id)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *UserHandler) GetMyEvents(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	events, err := h.eventUC.GetMyEvents(r.Context(), userID) // ← используем eventUC
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	var resp []response.EventResponse
+	for _, e := range events {
+		resp = append(resp, response.EventResponse{
+			ID:              e.ID.String(),
+			Title:           e.Title,
+			Description:     e.Description,
+			Rules:           e.Rules,
+			Recommendations: e.Recommendations,
+			OrganizerID:     e.OrganizerID.String(),
+			StartDate:       e.StartDate,
+			DrawDate:        e.DrawDate,
+			EndDate:         e.EndDate,
+			Status:          string(e.Status),
+			MaxParticipants: e.MaxParticipants,
+			CreatedAt:       e.CreatedAt,
+			UpdatedAt:       e.UpdatedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+</file>
+
+<file path="internal/controller/http/v1/wishlist.go">
+package v1
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"secret-santa-backend/internal/controller/http/v1/request"
+	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/usecase"
+)
+
+type WishlistHandler struct {
+	uc            usecase.WishlistUseCase
+	participantUC usecase.ParticipantUseCase
+}
+
+func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.ParticipantUseCase) *WishlistHandler {
+	return &WishlistHandler{
+		uc:            uc,
+		participantUC: participantUC,
+	}
+}
+
+// Create — создание вишлиста
+func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	var req request.CreateWishlistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	eventID, err := uuid.Parse(req.EventID)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	participant, err := h.participantUC.GetByUserAndEvent(r.Context(), userID, eventID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	wishlist, err := h.uc.Create(r.Context(), participant.ID, req.Visibility)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response.WishlistToResponse(&wishlist))
+}
+
+// GetByParticipant — главный метод для Санты
+func (h *WishlistHandler) GetByParticipant(w http.ResponseWriter, r *http.Request) {
+	participantIDStr := chi.URLParam(r, "participantId")
+	participantID, err := uuid.Parse(participantIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	eventIDStr := r.URL.Query().Get("eventId")
+	if eventIDStr == "" {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	wishlist, err := h.uc.GetForUser(r.Context(), eventID, participantID, userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.WishlistToResponse(wishlist))
+}
+
+func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
+	wishlistIDStr := chi.URLParam(r, "wishlistId")
+	wishlistID, err := uuid.Parse(wishlistIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	var req request.CreateWishlistItemRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	item, err := h.uc.AddItem(
+		r.Context(),
+		wishlistID,
+		req.Title,
+		&req.Link,
+		&req.ImageURL,
+		&req.Comment,
+	)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response.WishlistItemToResponse(&item))
+}
+
+// GetByUser — теперь правильно получает СВОЙ вишлист (для владельца)
+func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	eventIDStr := r.URL.Query().Get("eventId")
+	if eventIDStr == "" {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	participant, err := h.participantUC.GetByUserAndEvent(r.Context(), userID, eventID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	// 🔥 КРИТИЧЕСКИЙ ФИКС: владелец смотрит свой вишлист напрямую
+	wishlist, err := h.uc.GetByParticipant(r.Context(), participant.ID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.WishlistToResponse(wishlist))
+}
+
+func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
+	wishlistIDStr := chi.URLParam(r, "wishlistId")
+	wishlistID, err := uuid.Parse(wishlistIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	items, err := h.uc.GetItems(r.Context(), wishlistID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	var resp []response.WishlistItemResponse
+	for _, item := range items {
+		resp = append(resp, response.WishlistItemToResponse(&item))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+</file>
+
+<file path="internal/definitions/errors.go">
+package definitions
+
+import "errors"
+
+var (
+	ErrNotFound                    = errors.New("not found")
+	ErrForbidden                   = errors.New("forbidden")
+	ErrInvalidUUID                 = errors.New("invalid uuid")
+	ErrUnauthorized                = errors.New("unauthorized")
+	ErrConflict                    = errors.New("conflict")
+	ErrInvalidOAuthCode            = errors.New("invalid oauth code")
+	ErrMissingOAuthCode            = errors.New("missing oauth code")
+	ErrInvalidUserInput            = errors.New("invalid user input")
+	ErrInvalidOAuthUserInfo        = errors.New("invalid oauth user info")
+	ErrUserNotFound                = errors.New("user not found")
+	ErrEventNotFound               = errors.New("event not found")
+	ErrEventAlreadyFinished        = errors.New("event already finished")
+	ErrInvalidEventState           = errors.New("invalid event state")
+	ErrNotEnoughParticipants       = errors.New("not enough participants")
+	ErrDuplicateParticipant        = errors.New("duplicate participant")
+	ErrAlreadyParticipating        = errors.New("already participating")
+	ErrParticipantNotFound         = errors.New("participant not found")
+	ErrWishlistNotFound            = errors.New("wishlist not found")
+	ErrInvalidWishlistVisibility   = errors.New("invalid wishlist visibility")
+	ErrWishlistVisibilityForbidden = errors.New("wishlist visibility forbidden")
+	ErrNotOrganizer                = errors.New("not organizer")
+	ErrNotSanta                    = errors.New("not santa")
+	ErrAssignmentNotFound          = errors.New("assignment not found")
+)
+</file>
+
+<file path="internal/dto/assignment.go">
+package dto
+
+type GenerateAssignmentInput struct {
+	EventID string
+}
+</file>
+
+<file path="internal/dto/event.go">
+package dto
+
+import "time"
+
+// CreateEventInput — данные для создания события
+type CreateEventInput struct {
+	Title           string     `json:"title" validate:"required,min=3"`
+	Description     *string    `json:"description"`
+	Rules           *string    `json:"rules"`
+	Recommendations *string    `json:"recommendations"`
+	StartDate       time.Time  `json:"startDate" validate:"required"`
+	DrawDate        *time.Time `json:"drawDate"`
+	EndDate         time.Time  `json:"endDate" validate:"required"`
+	MaxParticipants int        `json:"maxParticipants" validate:"min=2"`
+}
+
+// UpdateEventInput — partial update (все поля pointer)
+type UpdateEventInput struct {
+	Title           *string    `json:"title"`
+	Description     *string    `json:"description"`
+	Rules           *string    `json:"rules"`
+	Recommendations *string    `json:"recommendations"`
+	StartDate       *time.Time `json:"startDate"`
+	DrawDate        *time.Time `json:"drawDate"`
+	EndDate         *time.Time `json:"endDate"`
+	MaxParticipants *int       `json:"maxParticipants"`
+}
+
+// EventResponse — ответ API
+type EventResponse struct {
+	ID              string     `json:"id"`
+	Title           string     `json:"title"`
+	Description     *string    `json:"description,omitempty"`
+	Rules           *string    `json:"rules,omitempty"`
+	Recommendations *string    `json:"recommendations,omitempty"`
+	OrganizerID     string     `json:"organizerId"`
+	StartDate       time.Time  `json:"startDate"`
+	DrawDate        *time.Time `json:"drawDate,omitempty"`
+	EndDate         time.Time  `json:"endDate"`
+	Status          string     `json:"status"`
+	MaxParticipants int        `json:"maxParticipants"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
+}
+</file>
+
+<file path="internal/dto/invitation.go">
+package dto
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// CreateInvitationInput — данные для генерации приглашения (организатор)
+type CreateInvitationInput struct {
+	EventID   uuid.UUID     `json:"eventId" validate:"required"`
+	ExpiresIn time.Duration `json:"expiresIn"` // например 7 * 24 * time.Hour
+}
+
+// JoinByInvitationInput — данные при переходе по ссылке
+type JoinByInvitationInput struct {
+	Token  string    `json:"token" validate:"required"`
+	UserID uuid.UUID `json:"-"` // заполняется из middleware
+}
+
+// InvitationResponse — ответ при генерации ссылки
+type InvitationResponse struct {
+	InviteURL string    `json:"inviteUrl"` // полная ссылка для приглашения
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+</file>
+
+<file path="internal/dto/participant.go">
+package dto
+
+type AddParticipantInput struct {
+	EventID string
+	UserID  string
+}
+</file>
+
+<file path="internal/dto/user.go">
+package dto
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type CreateUserInput struct {
+	Name          string `json:"name" validate:"required,min=2"`
+	Email         string `json:"email" validate:"required,email"`
+	OAuthID       string `json:"oauthId" validate:"required"`
+	OAuthProvider string `json:"oauthProvider" validate:"required,oneof=vk google github"`
+}
+
+type UpdateUserInput struct {
+	Name  *string `json:"name" validate:"omitempty,min=2"`
+	Email *string `json:"email" validate:"omitempty,email"`
+}
+
+type UserResponse struct { // новый — для ответов API
+	ID            uuid.UUID `json:"id"`
+	Name          string    `json:"name"`
+	Email         string    `json:"email"`
+	OAuthProvider string    `json:"oauthProvider"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+</file>
+
+<file path="internal/dto/wishlist.go">
+package dto
+
+type CreateWishlistInput struct {
+	UserID      string
+	Title       string
+	Description string
+	Link        string
+	ImageURL    string
+	Visibility  string
+}
+
+type UpdateWishlistInput struct {
+	Title       *string
+	Description *string
+	Link        *string
+	ImageURL    *string
+	Visibility  *string
+}
+</file>
+
+<file path="internal/entity/assignment.go">
+package entity
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type Assignment struct {
+	ID         uuid.UUID `db:"id"`
+	EventID    uuid.UUID `db:"event_id"`
+	GiverID    uuid.UUID `db:"giver_id"`
+	ReceiverID uuid.UUID `db:"receiver_id"`
+	CreatedAt  time.Time `db:"created_at"`
+}
+
+func NewAssignment(eventID, giverID, receiverID uuid.UUID) Assignment {
+	return Assignment{
+		ID:         uuid.New(),
+		EventID:    eventID,
+		GiverID:    giverID,
+		ReceiverID: receiverID,
+		CreatedAt:  time.Now(),
+	}
+}
+</file>
+
+<file path="internal/entity/event.go">
+package entity
+
+import (
+	"errors"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type EventStatus string
+
+const (
+	EventStatusDraft              EventStatus = "draft"               // Черновик (только организатор может редактировать)
+	EventStatusInvitationOpen     EventStatus = "invitation_open"     // Открыт набор участников по ссылке
+	EventStatusRegistrationClosed EventStatus = "registration_closed" // Набор участников закрыт
+	EventStatusDrawingPending     EventStatus = "drawing_pending"     // Готов к жеребьёвке
+	EventStatusDrawingDone        EventStatus = "drawing_done"        // Жеребьёвка проведена, назначения видны
+	EventStatusActive             EventStatus = "active"              // Игра идёт (можно отмечать отправку подарков)
+	EventStatusFinished           EventStatus = "finished"            // Событие завершено
+	EventStatusCancelled          EventStatus = "cancelled"           // Отменено
+)
+
+var ErrInvalidEventState = errors.New("invalid event state transition")
+
+type Event struct {
+	ID              uuid.UUID   `db:"id"`
+	Title           string      `db:"title"`
+	Description     *string     `db:"description"`
+	Rules           *string     `db:"rules"`
+	Recommendations *string     `db:"recommendations"`
+	OrganizerID     uuid.UUID   `db:"organizer_id"`
+	StartDate       time.Time   `db:"start_date"`
+	DrawDate        *time.Time  `db:"draw_date"`
+	EndDate         time.Time   `db:"end_date"`
+	Status          EventStatus `db:"status"`
+	MaxParticipants int         `db:"max_participants"`
+	CreatedAt       time.Time   `db:"created_at"`
+	UpdatedAt       time.Time   `db:"updated_at"`
+}
+
+// NewEvent создаёт событие в статусе draft
+func NewEvent(
+	title string,
+	organizerID uuid.UUID,
+	description, rules, recommendations *string,
+	startDate, endDate time.Time,
+	drawDate *time.Time,
+	maxParticipants int,
+) Event {
+	now := time.Now()
+
+	return Event{
+		ID:              uuid.New(),
+		Title:           title,
+		Description:     description,
+		Rules:           rules,
+		Recommendations: recommendations,
+		OrganizerID:     organizerID,
+		StartDate:       startDate,
+		DrawDate:        drawDate,
+		EndDate:         endDate,
+		Status:          EventStatusDraft,
+		MaxParticipants: maxParticipants,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+}
+
+// CanTransitionTo — проверяет возможность перехода
+func (e Event) CanTransitionTo(newStatus EventStatus) bool {
+	switch e.Status {
+	case EventStatusDraft:
+		return newStatus == EventStatusInvitationOpen || newStatus == EventStatusCancelled
+	case EventStatusInvitationOpen:
+		return newStatus == EventStatusRegistrationClosed || newStatus == EventStatusCancelled
+	case EventStatusRegistrationClosed:
+		return newStatus == EventStatusDrawingPending || newStatus == EventStatusDrawingDone || newStatus == EventStatusCancelled // ← добавили drawing_done
+	case EventStatusDrawingPending:
+		return newStatus == EventStatusDrawingDone || newStatus == EventStatusCancelled
+	case EventStatusDrawingDone:
+		return newStatus == EventStatusActive || newStatus == EventStatusCancelled
+	case EventStatusActive:
+		return newStatus == EventStatusFinished || newStatus == EventStatusCancelled
+	default:
+		return false
+	}
+}
+
+// TransitionTo — выполняет переход статуса с проверкой
+func (e *Event) TransitionTo(newStatus EventStatus) error {
+	if !e.CanTransitionTo(newStatus) {
+		return ErrInvalidEventState
+	}
+	e.Status = newStatus
+	e.UpdatedAt = time.Now()
+	return nil
+}
+
+// ====================== Вспомогательные методы ======================
+
+func (e Event) IsDrawable() bool {
+	return e.Status == EventStatusRegistrationClosed || e.Status == EventStatusDrawingPending
+}
+
+func (e Event) CanAddParticipants() bool {
+	return e.Status == EventStatusDraft || e.Status == EventStatusInvitationOpen
+}
+
+func (e Event) CanEdit() bool {
+	return e.Status != EventStatusFinished && e.Status != EventStatusCancelled
+}
+
+func (e Event) IsActive() bool {
+	return e.Status == EventStatusActive || e.Status == EventStatusDrawingDone
+}
+</file>
+
+<file path="internal/entity/invitation.go">
+package entity
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type Invitation struct {
+	ID        uuid.UUID `db:"id"`
+	EventID   uuid.UUID `db:"event_id"`
+	Token     string    `db:"token"`
+	ExpiresAt time.Time `db:"expires_at"`
+	CreatedBy uuid.UUID `db:"created_by"`
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
+}
+
+func NewInvitation(eventID, createdBy uuid.UUID, expiresIn time.Duration) Invitation {
+	now := time.Now()
+	if expiresIn == 0 {
+		expiresIn = 7 * 24 * time.Hour
+	}
+
+	return Invitation{
+		ID:        uuid.New(),
+		EventID:   eventID,
+		Token:     uuid.New().String(),
+		ExpiresAt: now.Add(expiresIn),
+		CreatedBy: createdBy,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+}
+
+// IsValid — теперь только проверка по времени (многоразовая ссылка)
+func (i Invitation) IsValid() bool {
+	return time.Now().Before(i.ExpiresAt)
+}
+</file>
+
+<file path="internal/entity/participant.go">
+package entity
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type Participant struct {
+	ID         uuid.UUID  `db:"id"`
+	EventID    uuid.UUID  `db:"event_id"`
+	UserID     uuid.UUID  `db:"user_id"`
+	Role       string     `db:"role"`
+	GiftSent   bool       `db:"gift_sent"`
+	GiftSentAt *time.Time `db:"gift_sent_at"`
+	CreatedAt  time.Time  `db:"created_at"`
+	UpdatedAt  time.Time  `db:"updated_at"`
+}
+
+func NewParticipant(eventID, userID uuid.UUID, role string) Participant {
+	now := time.Now()
+	return Participant{
+		ID:        uuid.New(),
+		EventID:   eventID,
+		UserID:    userID,
+		Role:      role,
+		GiftSent:  false,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+}
+
+const (
+	ParticipantRoleOrganizer   = "organizer"
+	ParticipantRoleParticipant = "participant"
+)
+</file>
+
+<file path="internal/entity/user.go">
+package entity
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type User struct {
+	ID            uuid.UUID `db:"id"`
+	Name          string    `db:"name"`
+	Email         string    `db:"email"`
+	OAuthID       string    `db:"oauth_id"`
+	OAuthProvider string    `db:"oauth_provider"`
+	CreatedAt     time.Time `db:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at"`
+}
+
+func NewUser(name, email, oauthID, oauthProvider string) User {
+	now := time.Now()
+	return User{
+		ID:            uuid.New(),
+		Name:          name,
+		Email:         email,
+		OAuthID:       oauthID,
+		OAuthProvider: oauthProvider,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+}
+</file>
+
+<file path="internal/entity/wishlist.go">
+package entity
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type Wishlist struct {
+	ID            uuid.UUID `db:"id"`
+	ParticipantID uuid.UUID `db:"participant_id"`
+	Visibility    string    `db:"visibility"`
+	CreatedAt     time.Time `db:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at"`
+}
+
+type WishlistItem struct {
+	ID         uuid.UUID `db:"id"`
+	WishlistID uuid.UUID `db:"wishlist_id"`
+	Title      string    `db:"title"`
+	Link       *string   `db:"link"`
+	ImageURL   *string   `db:"image_url"`
+	Comment    *string   `db:"comment"`
+	CreatedAt  time.Time `db:"created_at"`
+}
+
+const (
+	WishlistVisibilityPublic    = "public"
+	WishlistVisibilityFriends   = "friends"
+	WishlistVisibilitySantaOnly = "santa_only"
+)
+
+func NewWishlist(participantID uuid.UUID, visibility string) Wishlist {
+	now := time.Now()
+	return Wishlist{
+		ID:            uuid.New(),
+		ParticipantID: participantID,
+		Visibility:    visibility,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+}
+
+func NewWishlistItem(wishlistID uuid.UUID, title string, link, imageURL, comment *string) WishlistItem {
+	return WishlistItem{
+		ID:         uuid.New(),
+		WishlistID: wishlistID,
+		Title:      title,
+		Link:       link,
+		ImageURL:   imageURL,
+		Comment:    comment,
+		CreatedAt:  time.Now(),
+	}
+}
+</file>
+
+<file path="internal/logger/logger.go">
+package logger
+
+import (
+	"log/slog"
+	"os"
+	"runtime"
+	"time"
+)
+
+const (
+	serviceName = "secret-santa"
+)
+
+func New(levelStr, stage string) *slog.Logger {
+	opts := &slog.HandlerOptions{
+		Level: parseLevel(levelStr),
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.Attr{
+					Key:   "timestamp",
+					Value: slog.StringValue(a.Value.Time().Format(time.RFC3339)),
+				}
+			}
+			if a.Key == slog.LevelKey {
+				return slog.Attr{
+					Key:   "severity",
+					Value: a.Value,
+				}
+			}
+			return a
+		},
+	}
+
+	handler := slog.NewJSONHandler(os.Stdout, opts)
+
+	log := slog.New(handler).With(
+		slog.String("service", serviceName),
+		slog.String("stage", stage),
+	)
+
+	return log
+}
+
+func parseLevel(level string) slog.Level {
+	switch level {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+func WithSource(log *slog.Logger) *slog.Logger {
+	pc, file, line, ok := runtime.Caller(2)
+	if !ok {
+		return log
+	}
+	fn := runtime.FuncForPC(pc)
+
+	return log.With(
+		slog.Group("source",
+			slog.String("function", fn.Name()),
+			slog.String("file", file),
+			slog.Int("line", line),
+		),
+	)
+}
+</file>
+
+<file path="internal/middleware/auth.go">
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
+
+	auth "secret-santa-backend/internal/oauth"
+
+	"github.com/google/uuid"
+)
+
+type contextKey string
+
+const UserIDKey contextKey = "user_id"
+
+type AuthMiddleware struct {
+	jwtManager *auth.JWTManager
+	log        *slog.Logger
+}
+
+func NewAuthMiddleware(jwtManager *auth.JWTManager, log *slog.Logger) *AuthMiddleware {
+	return &AuthMiddleware{jwtManager: jwtManager, log: log}
+}
+
+func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "missing authorization header", http.StatusUnauthorized)
+			return
+		}
+
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenStr == authHeader {
+			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
+			return
+		}
+
+		claims, err := m.jwtManager.ParseToken(tokenStr)
+		if err != nil {
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		userID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			http.Error(w, "invalid user id in token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// ✅ FIX: безопасный GetUserID
+func GetUserID(r *http.Request) (uuid.UUID, error) {
+	val := r.Context().Value(UserIDKey)
+	if val == nil {
+		return uuid.Nil, fmt.Errorf("user id not found in context")
+	}
+
+	id, ok := val.(uuid.UUID)
+	if !ok {
+		return uuid.Nil, fmt.Errorf("invalid user id type in context")
+	}
+
+	return id, nil
+}
+</file>
+
+<file path="internal/middleware/recovery.go">
+package middleware
+
+import (
+	"fmt"
+	"net/http"
+
+	"secret-santa-backend/internal/controller/http/v1/response"
+)
+
+// RecoveryMiddleware — защищает от panic
+func RecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				err := fmt.Errorf("panic: %v", rec)
+				response.WriteHTTPError(w, err)
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+</file>
+
+<file path="internal/middleware/timeout.go">
+package middleware
+
+import (
+	"net/http"
+	"time"
+)
+
+// TimeoutMiddleware — ограничивает время запроса
+func TimeoutMiddleware(timeout time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.TimeoutHandler(next, timeout, "request timeout")
+	}
+}
+</file>
+
+<file path="internal/oauth/github.go">
+package oauth
+
+import (
+	"context"
+	"encoding/json"
+	"strconv"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
+)
+
+type GitHubProvider struct {
+	config *oauth2.Config
+}
+
+func NewGitHubProvider(clientID, clientSecret, redirectURL string) *GitHubProvider {
+	return &GitHubProvider{
+		config: &oauth2.Config{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			RedirectURL:  redirectURL,
+			Endpoint:     github.Endpoint,
+			Scopes:       []string{"user:email"},
+		},
+	}
+}
+
+func (p *GitHubProvider) Config() *oauth2.Config {
+	return p.config
+}
+
+func (p *GitHubProvider) GetAuthURL(state string) string {
+	return p.config.AuthCodeURL(state)
+}
+
+func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (UserInfo, error) {
+	client := p.config.Client(ctx, token)
+
+	resp, err := client.Get("https://api.github.com/user")
+	if err != nil {
+		return UserInfo{}, err
+	}
+	defer resp.Body.Close()
+
+	var ghUser struct {
+		ID    int    `json:"id"`
+		Name  string `json:"name"`
+		Email string `json:"email"`
+		Login string `json:"login"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&ghUser); err != nil {
+		return UserInfo{}, err
+	}
+
+	name := ghUser.Name
+	if name == "" {
+		name = ghUser.Login
+	}
+
+	email := ghUser.Email
+	if email == "" {
+		email = strconv.Itoa(ghUser.ID) + "@github.local"
+	}
+
+	return UserInfo{
+		ID:       strconv.Itoa(ghUser.ID),
+		Name:     name,
+		Email:    email,
+		Provider: "github",
+	}, nil
+}
+</file>
+
+<file path="internal/oauth/jwt.go">
+package oauth
+
+import (
+	"errors"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type JWTManager struct {
+	secret []byte
+	ttl    time.Duration
+}
+
+func NewJWTManager(secret string, ttl time.Duration) (*JWTManager, error) {
+	if secret == "" {
+		return nil, errors.New("jwt secret must not be empty")
+	}
+	if len(secret) < 32 {
+		return nil, errors.New("jwt secret must be at least 32 characters")
+	}
+	return &JWTManager{secret: []byte(secret), ttl: ttl}, nil
+}
+
+type Claims struct {
+	UserID string `json:"user_id"`
+	jwt.RegisteredClaims
+}
+
+func (m *JWTManager) GenerateToken(userID string) (string, error) {
+	now := time.Now().UTC()
+	claims := Claims{
+		UserID: userID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(m.ttl)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
+			Issuer:    "secret-santa",
+			Audience:  jwt.ClaimStrings{"secret-santa-api"},
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(m.secret)
+}
+
+func (m *JWTManager) ParseToken(tokenStr string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("invalid signing method")
+		}
+		return m.secret, nil
+	},
+		jwt.WithIssuer("secret-santa"),
+		jwt.WithAudience("secret-santa-api"),
+		jwt.WithLeeway(2*time.Second),
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, errors.New("invalid token")
+	}
+
+	return claims, nil
+}
+</file>
+
+<file path="internal/oauth/provider.go">
+package oauth
+
+import (
+	"context"
+	"fmt"
+
+	"golang.org/x/oauth2"
+
+	"secret-santa-backend/internal/config" // ← важно
+)
+
+// UserInfo — общая структура для всех провайдеров
+type UserInfo struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Provider string `json:"provider"`
+}
+
+// Provider — главный интерфейс (точно по boilerplate)
+type Provider interface {
+	Config() *oauth2.Config
+	GetAuthURL(state string) string
+	GetUserInfo(ctx context.Context, token *oauth2.Token) (UserInfo, error)
+}
+
+// New — фабрика провайдеров
+func New(cfg *config.Config) (Provider, error) {
+	switch cfg.OAuthProvider {
+	case "github":
+		return NewGitHubProvider(
+			cfg.GithubClientID,
+			cfg.GithubClientSecret,
+			cfg.GithubRedirectURL,
+		), nil
+
+	// Здесь в будущем добавляем СДЭК ID, VK, Google и т.д.
+	// case "sdek":
+	//     return NewSdekProvider(cfg), nil
+	// case "vk":
+	//     return NewVKProvider(cfg), nil
+	// case "google":
+	//     return NewGoogleProvider(cfg), nil
+
+	default:
+		return nil, fmt.Errorf("unsupported oauth provider: %s", cfg.OAuthProvider)
+	}
+}
+</file>
+
+<file path="internal/repository/postgres/assignment/mapper.go">
+package assignment
+
+import (
+	"secret-santa-backend/internal/entity"
+
+	"github.com/jackc/pgx/v5"
+)
+
+func scanAssignment(row pgx.Row) (*entity.Assignment, error) {
+	var a entity.Assignment
+	err := row.Scan(
+		&a.ID,
+		&a.EventID,
+		&a.GiverID,
+		&a.ReceiverID,
+		&a.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+func scanAssignments(rows pgx.Rows) ([]entity.Assignment, error) {
+	var assignments []entity.Assignment
+	for rows.Next() {
+		var a entity.Assignment
+		err := rows.Scan(
+			&a.ID,
+			&a.EventID,
+			&a.GiverID,
+			&a.ReceiverID,
+			&a.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		assignments = append(assignments, a)
+	}
+	return assignments, nil
+}
+</file>
+
+<file path="internal/repository/postgres/assignment/queries.go">
+package assignment
+
+import "github.com/Masterminds/squirrel"
+
+var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+func createAssignmentQuery() squirrel.InsertBuilder {
+	return qb.Insert("assignments").
+		Columns("id", "event_id", "giver_id", "receiver_id", "created_at")
+}
+
+func getAssignmentsByEventQuery(eventID string) squirrel.SelectBuilder {
+	return qb.Select("id", "event_id", "giver_id", "receiver_id", "created_at").
+		From("assignments").
+		Where(squirrel.Eq{"event_id": eventID})
+}
+
+func deleteAssignmentsByEventQuery(eventID string) squirrel.DeleteBuilder {
+	return qb.Delete("assignments").
+		Where(squirrel.Eq{"event_id": eventID})
+}
+</file>
+
+<file path="internal/repository/postgres/assignment/repo.go">
+package assignment
+
+import (
+	"context"
+	"fmt"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Repository struct {
+	db *pgxpool.Pool
+}
+
+func New(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
+}
+
+func (r *Repository) Create(ctx context.Context, a entity.Assignment) error {
+	query := createAssignmentQuery().
+		Values(a.ID, a.EventID, a.GiverID, a.ReceiverID, a.CreatedAt)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error) {
+	query := getAssignmentsByEventQuery(eventID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanAssignments(rows)
+}
+
+func (r *Repository) DeleteByEvent(ctx context.Context, eventID uuid.UUID) error {
+	query := deleteAssignmentsByEventQuery(eventID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+// FIXED: новая атомарная операция — вся жеребьёвка в одной транзакции
+func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus entity.EventStatus) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) // в случае ошибки будет откат
+
+	// 1. Удаляем старые назначения
+	if err := r.deleteByEventTx(ctx, tx, eventID); err != nil {
+		return fmt.Errorf("failed to delete old assignments: %w", err)
+	}
+
+	// 2. Создаём новые назначения
+	for _, a := range assignments {
+		if err := r.createTx(ctx, tx, a); err != nil {
+			return fmt.Errorf("failed to create assignment: %w", err)
+		}
+	}
+
+	// 3. Обновляем статус события
+	if err := r.updateEventStatusTx(ctx, tx, eventID, newStatus); err != nil {
+		return fmt.Errorf("failed to update event status: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// Вспомогательные методы внутри транзакции
+func (r *Repository) deleteByEventTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID) error {
+	query := deleteAssignmentsByEventQuery(eventID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) createTx(ctx context.Context, tx pgx.Tx, a entity.Assignment) error {
+	query := createAssignmentQuery().
+		Values(a.ID, a.EventID, a.GiverID, a.ReceiverID, a.CreatedAt)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, status entity.EventStatus) error {
+	// Используем тот же query-builder, что и в event repo (можно вынести в общий helper при желании)
+	// Здесь для минимальности используем прямой SQL
+	_, err := tx.Exec(ctx, `
+		UPDATE events 
+		SET status = $1, updated_at = now() 
+		WHERE id = $2`,
+		status, eventID)
+	return err
+}
+</file>
+
+<file path="internal/repository/postgres/event/mapper.go">
+package event
+
+import (
+	"secret-santa-backend/internal/entity"
+
+	"github.com/jackc/pgx/v5"
+)
+
+func ScanEvent(row pgx.Row) (*entity.Event, error) {
+	var e entity.Event
+	err := row.Scan(
+		&e.ID,
+		&e.Title,
+		&e.Description,
+		&e.Rules,
+		&e.Recommendations,
+		&e.OrganizerID,
+		&e.StartDate,
+		&e.DrawDate,
+		&e.EndDate,
+		&e.Status,
+		&e.MaxParticipants,
+		&e.CreatedAt,
+		&e.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+func ScanEvents(rows pgx.Rows) ([]entity.Event, error) {
+	var events []entity.Event
+	for rows.Next() {
+		e, err := ScanEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, *e)
+	}
+	return events, nil
+}
+</file>
+
+<file path="internal/repository/postgres/event/queries.go">
+package event
+
+import "github.com/Masterminds/squirrel"
+
+var psql = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+func getEventQuery() squirrel.SelectBuilder {
+	return psql.Select(
+		"id", "title", "description", "rules", "recommendations",
+		"organizer_id", "start_date", "draw_date", "end_date",
+		"status", "max_participants", "created_at", "updated_at",
+	).
+		From("events")
+}
+
+func listEventsQuery() squirrel.SelectBuilder {
+	return getEventQuery()
+}
+
+func createEventQuery() squirrel.InsertBuilder {
+	return psql.Insert("events").
+		Columns(
+			"id", "title", "description", "rules", "recommendations",
+			"organizer_id", "start_date", "draw_date", "end_date",
+			"status", "max_participants",
+		)
+}
+
+func updateEventQuery() squirrel.UpdateBuilder {
+	return psql.Update("events")
+}
+
+func deleteEventQuery() squirrel.DeleteBuilder {
+	return psql.Delete("events")
+}
+</file>
+
+<file path="internal/repository/postgres/event/repo.go">
+package event
+
+import (
+	"context"
+	"strconv"
+	"strings"
+
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Repository struct {
+	db *pgxpool.Pool
+}
+
+func New(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
+}
+
+func (r *Repository) Create(ctx context.Context, e entity.Event) error {
+	query := `
+		INSERT INTO events (
+			id, title, description, rules, recommendations, organizer_id,
+			start_date, draw_date, end_date, status, max_participants,
+			created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`
+
+	_, err := r.db.Exec(ctx, query,
+		e.ID, e.Title, e.Description, e.Rules, e.Recommendations,
+		e.OrganizerID, e.StartDate, e.DrawDate, e.EndDate,
+		e.Status, e.MaxParticipants, e.CreatedAt, e.UpdatedAt,
+	)
+	return err
+}
+
+func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
+	query := `
+		SELECT id, title, description, rules, recommendations, organizer_id,
+		       start_date, draw_date, end_date, status, max_participants,
+		       created_at, updated_at
+		FROM events WHERE id = $1
+	`
+
+	row := r.db.QueryRow(ctx, query, id)
+	return ScanEvent(row)
+}
+
+func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
+	query := `
+		SELECT id, title, description, rules, recommendations, organizer_id,
+		       start_date, draw_date, end_date, status, max_participants,
+		       created_at, updated_at
+		FROM events
+	`
+
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return ScanEvents(rows)
+}
+
+func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
+	query := "UPDATE events SET updated_at = NOW(), "
+	args := []interface{}{}
+	argID := 1
+
+	if input.Title != nil {
+		query += "title = $" + strconv.Itoa(argID) + ", "
+		args = append(args, *input.Title)
+		argID++
+	}
+	if input.Description != nil {
+		query += "description = $" + strconv.Itoa(argID) + ", "
+		args = append(args, *input.Description)
+		argID++
+	}
+	if input.Rules != nil {
+		query += "rules = $" + strconv.Itoa(argID) + ", "
+		args = append(args, *input.Rules)
+		argID++
+	}
+	if input.Recommendations != nil {
+		query += "recommendations = $" + strconv.Itoa(argID) + ", "
+		args = append(args, *input.Recommendations)
+		argID++
+	}
+	if input.StartDate != nil {
+		query += "start_date = $" + strconv.Itoa(argID) + ", "
+		args = append(args, *input.StartDate)
+		argID++
+	}
+	if input.DrawDate != nil {
+		query += "draw_date = $" + strconv.Itoa(argID) + ", "
+		args = append(args, *input.DrawDate)
+		argID++
+	}
+	if input.EndDate != nil {
+		query += "end_date = $" + strconv.Itoa(argID) + ", "
+		args = append(args, *input.EndDate)
+		argID++
+	}
+	if input.MaxParticipants != nil {
+		query += "max_participants = $" + strconv.Itoa(argID) + ", "
+		args = append(args, *input.MaxParticipants)
+		argID++
+	}
+
+	if len(args) == 0 {
+		return nil
+	}
+
+	query = strings.TrimSuffix(query, ", ")
+	query += " WHERE id = $" + strconv.Itoa(argID)
+	args = append(args, id)
+
+	_, err := r.db.Exec(ctx, query, args...)
+	return err
+}
+
+func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
+	query := `
+		UPDATE events 
+		SET status = $1, updated_at = NOW() 
+		WHERE id = $2
+	`
+	_, err := r.db.Exec(ctx, query, status, id)
+	return err
+}
+
+func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM events WHERE id = $1`, id)
+	return err
+}
+
+func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
+	query := `
+		SELECT DISTINCT e.id, e.title, e.description, e.rules, e.recommendations, 
+		       e.organizer_id, e.start_date, e.draw_date, e.end_date, 
+		       e.status, e.max_participants, e.created_at, e.updated_at
+		FROM events e
+		LEFT JOIN participants p ON e.id = p.event_id
+		WHERE e.organizer_id = $1 
+		   OR p.user_id = $1
+		ORDER BY e.created_at DESC
+	`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return ScanEvents(rows)
+}
+</file>
+
+<file path="internal/repository/postgres/invitation/repo.go">
+package invitation
+
+import (
+	"context"
+	"fmt"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Repository struct {
+	db *pgxpool.Pool
+}
+
+func New(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
+}
+
+func (r *Repository) Create(ctx context.Context, i entity.Invitation) error {
+	query := `
+		INSERT INTO invitations (
+			id, event_id, token, expires_at, created_by, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`
+
+	_, err := r.db.Exec(ctx, query,
+		i.ID, i.EventID, i.Token, i.ExpiresAt,
+		i.CreatedBy, i.CreatedAt, i.UpdatedAt,
+	)
+	return err
+}
+
+func (r *Repository) GetByToken(ctx context.Context, token string) (*entity.Invitation, error) {
+	query := `
+		SELECT id, event_id, token, expires_at, created_by, created_at, updated_at
+		FROM invitations
+		WHERE token = $1
+	`
+
+	row := r.db.QueryRow(ctx, query, token)
+	return scanInvitation(row)
+}
+
+// scanInvitation — обновлённая версия без поля Used
+func scanInvitation(row pgx.Row) (*entity.Invitation, error) {
+	var i entity.Invitation
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.Token,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan invitation: %w", err)
+	}
+	return &i, nil
+}
+</file>
+
+<file path="internal/repository/postgres/participant/mapper.go">
+package participant
+
+import (
+	"secret-santa-backend/internal/entity"
+
+	"github.com/jackc/pgx/v5"
+)
+
+func scanParticipant(row pgx.Row) (*entity.Participant, error) {
+	var p entity.Participant
+	err := row.Scan(
+		&p.ID,
+		&p.EventID,
+		&p.UserID,
+		&p.Role,
+		&p.GiftSent,
+		&p.GiftSentAt,
+		&p.CreatedAt,
+		&p.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func scanParticipants(rows pgx.Rows) ([]entity.Participant, error) {
+	var participants []entity.Participant
+	for rows.Next() {
+		var p entity.Participant
+		err := rows.Scan(
+			&p.ID,
+			&p.EventID,
+			&p.UserID,
+			&p.Role,
+			&p.GiftSent,
+			&p.GiftSentAt,
+			&p.CreatedAt,
+			&p.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		participants = append(participants, p)
+	}
+	return participants, nil
+}
+</file>
+
+<file path="internal/repository/postgres/participant/queries.go">
+package participant
+
+import "github.com/Masterminds/squirrel"
+
+var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+func createParticipantQuery() squirrel.InsertBuilder {
+	return qb.Insert("participants").
+		Columns("id", "event_id", "user_id", "role", "gift_sent", "created_at", "updated_at")
+}
+
+func getParticipantByIDQuery(id string) squirrel.SelectBuilder {
+	return qb.Select("id", "event_id", "user_id", "role", "gift_sent", "gift_sent_at", "created_at", "updated_at").
+		From("participants").
+		Where(squirrel.Eq{"id": id})
+}
+
+func getParticipantsByEventQuery(eventID string) squirrel.SelectBuilder {
+	return qb.Select("id", "event_id", "user_id", "role", "gift_sent", "gift_sent_at", "created_at", "updated_at").
+		From("participants").
+		Where(squirrel.Eq{"event_id": eventID})
+}
+
+func updateParticipantGiftSentQuery(id string) squirrel.UpdateBuilder {
+	return qb.Update("participants").
+		Set("gift_sent_at", squirrel.Expr("NOW()"))
+}
+
+func deleteParticipantQuery(id string) squirrel.DeleteBuilder {
+	return qb.Delete("participants").
+		Where(squirrel.Eq{"id": id})
+}
+
+func getParticipantByUserAndEventQuery(userID, eventID string) squirrel.SelectBuilder {
+	return qb.Select("id", "event_id", "user_id", "role", "gift_sent", "gift_sent_at", "created_at", "updated_at").
+		From("participants").
+		Where(squirrel.Eq{"user_id": userID, "event_id": eventID}).
+		Limit(1)
+}
+</file>
+
+<file path="internal/repository/postgres/participant/repo.go">
+package participant
+
+import (
+	"context"
+	"fmt"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Repository struct {
+	db *pgxpool.Pool
+}
+
+func New(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
+}
+
+func (r *Repository) Create(ctx context.Context, p entity.Participant) error {
+	query := createParticipantQuery().
+		Values(p.ID, p.EventID, p.UserID, p.Role, p.GiftSent, p.CreatedAt, p.UpdatedAt)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error) {
+	query := getParticipantByIDQuery(id.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanParticipant(row)
+}
+
+func (r *Repository) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error) {
+	query := getParticipantsByEventQuery(eventID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanParticipants(rows)
+}
+
+func (r *Repository) UpdateGiftSent(ctx context.Context, id uuid.UUID, sent bool) error {
+	query := qb.Update("participants").
+		Set("gift_sent", sent).
+		Set("updated_at", squirrel.Expr("NOW()"))
+	if sent {
+		query = query.Set("gift_sent_at", squirrel.Expr("NOW()"))
+	}
+
+	sql, args, err := query.Where(squirrel.Eq{"id": id}).ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
+	query := deleteParticipantQuery(id.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error) {
+	query := getParticipantByUserAndEventQuery(userID.String(), eventID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRow(ctx, sql, args...)
+	p, err := scanParticipant(row)
+	if err != nil {
+		return nil, fmt.Errorf("get participant by user and event: %w", err)
+	}
+	return p, nil
+}
+</file>
+
+<file path="internal/repository/postgres/user/mapper.go">
+package user
+
+import (
+	"errors"
+
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/entity"
+
+	"github.com/jackc/pgx/v5"
+)
+
+func scanUser(row pgx.Row) (*entity.User, error) {
+	var u entity.User
+	err := row.Scan(
+		&u.ID,
+		&u.Name,
+		&u.Email,
+		&u.OAuthID,
+		&u.OAuthProvider,
+		&u.CreatedAt,
+		&u.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, definitions.ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+func scanUsers(rows pgx.Rows) ([]entity.User, error) {
+	var users []entity.User
+	for rows.Next() {
+		var u entity.User
+		err := rows.Scan(
+			&u.ID,
+			&u.Name,
+			&u.Email,
+			&u.OAuthID,
+			&u.OAuthProvider,
+			&u.CreatedAt,
+			&u.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+</file>
+
+<file path="internal/repository/postgres/user/queries.go">
+package user
+
+import (
+	"github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
+)
+
+var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+// GetByID — запрос для получения пользователя по ID
+func GetByID(id uuid.UUID) squirrel.SelectBuilder {
+	return qb.Select("id", "name", "email", "oauth_id", "oauth_provider", "created_at", "updated_at").
+		From("users").
+		Where(squirrel.Eq{"id": id})
+}
+
+// GetByOAuthID — запрос для поиска по OAuth
+func GetByOAuthID(oauthID, oauthProvider string) squirrel.SelectBuilder {
+	return qb.Select("id", "name", "email", "oauth_id", "oauth_provider", "created_at", "updated_at").
+		From("users").
+		Where(squirrel.Eq{
+			"oauth_id":       oauthID,
+			"oauth_provider": oauthProvider,
+		})
+}
+
+// GetByEmail — запрос по email
+func GetByEmail(email string) squirrel.SelectBuilder {
+	return qb.Select("id", "name", "email", "oauth_id", "oauth_provider", "created_at", "updated_at").
+		From("users").
+		Where(squirrel.Eq{"email": email})
+}
+
+// GetAll — запрос для получения всех пользователей
+func GetAll() squirrel.SelectBuilder {
+	return qb.Select("id", "name", "email", "oauth_id", "oauth_provider", "created_at", "updated_at").
+		From("users")
+}
+
+// Create — запрос на создание пользователя
+func Create() squirrel.InsertBuilder {
+	return qb.Insert("users").
+		Columns("name", "email", "oauth_id", "oauth_provider").
+		Suffix("RETURNING id, name, email, oauth_id, oauth_provider, created_at, updated_at")
+}
+
+// Update — запрос на частичное обновление
+func Update(id uuid.UUID) squirrel.UpdateBuilder {
+	return qb.Update("users").
+		Where(squirrel.Eq{"id": id})
+}
+
+// Delete — запрос на удаление
+func Delete(id uuid.UUID) squirrel.DeleteBuilder {
+	return qb.Delete("users").
+		Where(squirrel.Eq{"id": id})
+}
+</file>
+
+<file path="internal/repository/postgres/user/repo.go">
+package user
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Repository struct {
+	db *pgxpool.Pool
+}
+
+func New(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
+}
+
+func (r *Repository) Create(ctx context.Context, user entity.User) error {
+	query := Create().
+		Values(user.Name, user.Email, user.OAuthID, user.OAuthProvider)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
+	query := GetByID(id)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanUser(row)
+}
+
+func (r *Repository) GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error) {
+	query := GetByOAuthID(oauthID, oauthProvider)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanUser(row)
+}
+
+func (r *Repository) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
+	query := GetByEmail(email)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanUser(row)
+}
+
+func (r *Repository) GetAll(ctx context.Context) ([]entity.User, error) {
+	query := GetAll()
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanUsers(rows)
+}
+
+func (r *Repository) Update(ctx context.Context, id uuid.UUID, name, email *string) error {
+	query := Update(id)
+	if name != nil {
+		query = query.Set("name", *name)
+	}
+	if email != nil {
+		query = query.Set("email", *email)
+	}
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
+	query := Delete(id)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+</file>
+
+<file path="internal/repository/postgres/wishlist/mapper.go">
+package wishlist
+
+import (
+	"secret-santa-backend/internal/entity"
+
+	"github.com/jackc/pgx/v5"
+)
+
+func scanWishlist(row pgx.Row) (*entity.Wishlist, error) {
+	var w entity.Wishlist
+	err := row.Scan(
+		&w.ID,
+		&w.ParticipantID,
+		&w.Visibility,
+		&w.CreatedAt,
+		&w.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
+func scanWishlistItems(rows pgx.Rows) ([]entity.WishlistItem, error) {
+	var items []entity.WishlistItem
+	for rows.Next() {
+		var item entity.WishlistItem
+		err := rows.Scan(
+			&item.ID,
+			&item.WishlistID,
+			&item.Title,
+			&item.Link,
+			&item.ImageURL,
+			&item.Comment,
+			&item.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+</file>
+
+<file path="internal/repository/postgres/wishlist/queries.go">
+package wishlist
+
+import "github.com/Masterminds/squirrel"
+
+var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+func createWishlistQuery() squirrel.InsertBuilder {
+	return qb.Insert("wishlists").
+		Columns("id", "participant_id", "visibility", "created_at", "updated_at")
+}
+
+func createWishlistItemQuery() squirrel.InsertBuilder {
+	return qb.Insert("wishlist_items").
+		Columns("id", "wishlist_id", "title", "link", "image_url", "comment", "created_at")
+}
+
+func getWishlistByParticipantQuery(participantID string) squirrel.SelectBuilder {
+	return qb.Select("id", "participant_id", "visibility", "created_at", "updated_at").
+		From("wishlists").
+		Where(squirrel.Eq{"participant_id": participantID})
+}
+
+func getWishlistItemsQuery(wishlistID string) squirrel.SelectBuilder {
+	return qb.Select("id", "wishlist_id", "title", "link", "image_url", "comment", "created_at").
+		From("wishlist_items").
+		Where(squirrel.Eq{"wishlist_id": wishlistID})
+}
+</file>
+
+<file path="internal/repository/postgres/wishlist/repo.go">
+package wishlist
+
+import (
+	"context"
+	"fmt"
+
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Repository struct {
+	db *pgxpool.Pool
+}
+
+func New(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
+}
+
+func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
+	// 🔥 КРИТИЧЕСКИЙ ФИКС: проверяем, что вишлист для этого участника ещё не существует
+	existing, err := r.GetByParticipant(ctx, w.ParticipantID)
+	if err == nil && existing != nil {
+		return fmt.Errorf("wishlist already exists for participant %s: %w", w.ParticipantID, definitions.ErrConflict)
+	}
+
+	query := createWishlistQuery().
+		Values(w.ID, w.ParticipantID, w.Visibility, w.CreatedAt, w.UpdatedAt)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) CreateItem(ctx context.Context, item entity.WishlistItem) error {
+	query := createWishlistItemQuery().
+		Values(item.ID, item.WishlistID, item.Title, item.Link, item.ImageURL, item.Comment, item.CreatedAt)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
+	query := getWishlistByParticipantQuery(participantID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanWishlist(row)
+}
+
+func (r *Repository) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error) {
+	query := getWishlistItemsQuery(wishlistID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanWishlistItems(rows)
+}
+</file>
+
+<file path="internal/repository/postgres/db.go">
+package repository
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+func NewDB(connString string) (*pgxpool.Pool, error) {
+	ctx := context.Background()
+
+	dbpool, err := pgxpool.New(ctx, connString)
+	if err != nil {
+		return nil, fmt.Errorf("unable to connect to database: %w", err)
+	}
+
+	err = dbpool.Ping(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("database ping failed: %w", err)
+	}
+
+	return dbpool, nil
+}
+</file>
+
+<file path="internal/usecase/assignment/interfaces.go">
+package assignment
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+type Repository interface {
+	Create(ctx context.Context, assignment entity.Assignment) error
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
+	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
+
+	// FIXED: новый метод — вся жеребьёвка в одной атомарной транзакции
+	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus entity.EventStatus) error
+}
+
+type EventRepository interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error
+}
+
+type ParticipantRepository interface {
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
+}
+</file>
+
+<file path="internal/usecase/assignment/usecase.go">
+package assignment
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"math/rand"
+
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+type UseCase struct {
+	repo            Repository
+	participantRepo ParticipantRepository
+	eventRepo       EventRepository
+	log             *slog.Logger
+}
+
+func New(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository) *UseCase {
+	return &UseCase{
+		repo:            repo,
+		participantRepo: participantRepo,
+		eventRepo:       eventRepo,
+	}
+}
+
+func NewWithLogger(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository, log *slog.Logger) *UseCase {
+	return &UseCase{
+		repo:            repo,
+		participantRepo: participantRepo,
+		eventRepo:       eventRepo,
+		log:             log,
+	}
+}
+
+// Draw — запускает жеребьёвку (только организатор)
+func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
+	if uc.log != nil {
+		uc.log.Info("draw started",
+			slog.String("event_id", eventID.String()),
+			slog.String("user_id", userID.String()),
+		)
+	}
+
+	if eventID == uuid.Nil || userID == uuid.Nil {
+		return definitions.ErrInvalidUserInput
+	}
+
+	// 1. Получаем событие
+	eventPtr, err := uc.eventRepo.GetByID(ctx, eventID)
+	if err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to get event", slog.String("error", err.Error()))
+		}
+		return fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+	}
+
+	// 2. Проверяем, что это организатор
+	if eventPtr.OrganizerID != userID {
+		return definitions.ErrNotOrganizer
+	}
+
+	// 3. Проверяем статус события
+	if !eventPtr.IsDrawable() {
+		if uc.log != nil {
+			uc.log.Warn("draw not allowed due to status",
+				slog.String("status", string(eventPtr.Status)),
+			)
+		}
+		return definitions.ErrInvalidEventState
+	}
+
+	// 4. Получаем участников
+	participants, err := uc.participantRepo.GetByEvent(ctx, eventID)
+	if err != nil {
+		return fmt.Errorf("failed to get participants: %w", err)
+	}
+
+	if len(participants) < 3 {
+		return definitions.ErrNotEnoughParticipants
+	}
+
+	// 5. Генерируем новую жеребьёвку (derangement)
+	assignments, err := uc.createDerangement(eventID, participants)
+	if err != nil {
+		return fmt.Errorf("failed to create derangement: %w", err)
+	}
+
+	// FIXED: вся жеребьёвка теперь в одной атомарной транзакции
+	if err := uc.repo.TransactionalDraw(ctx, eventID, assignments, entity.EventStatusDrawingDone); err != nil {
+		return fmt.Errorf("failed to execute draw transaction: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("draw completed successfully",
+			slog.String("event_id", eventID.String()),
+			slog.Int("assignments_created", len(assignments)),
+		)
+	}
+
+	return nil
+}
+
+// createDerangement — улучшенный алгоритм (никто не дарит себе)
+func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Participant) ([]entity.Assignment, error) {
+	n := len(participants)
+	ids := make([]uuid.UUID, n)
+	for i, p := range participants {
+		ids[i] = p.UserID
+	}
+
+	maxAttempts := 200 // FIXED: увеличено для большей надёжности
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		shuffled := make([]uuid.UUID, n)
+		copy(shuffled, ids)
+		rand.Shuffle(n, func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+
+		valid := true
+		for i := 0; i < n; i++ {
+			if shuffled[i] == ids[i] {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			assignments := make([]entity.Assignment, n)
+			for i := 0; i < n; i++ {
+				assignments[i] = entity.NewAssignment(eventID, ids[i], shuffled[i])
+			}
+			return assignments, nil
+		}
+	}
+
+	return nil, fmt.Errorf("failed to generate valid derangement after %d attempts", maxAttempts)
+}
+
+// GetByEvent — возвращает ТОЛЬКО свою пару (без изменений)
+func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {
+	if eventID == uuid.Nil || userID == uuid.Nil {
+		return nil, definitions.ErrInvalidUserInput
+	}
+
+	assignments, err := uc.repo.GetByEvent(ctx, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get assignments: %w", err)
+	}
+
+	for _, a := range assignments {
+		if a.GiverID == userID {
+			return []entity.Assignment{a}, nil
+		}
+	}
+
+	return []entity.Assignment{}, nil
+}
+</file>
+
+<file path="internal/usecase/auth/usecase.go">
+package auth
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/oauth"
+	"secret-santa-backend/internal/usecase"
+
+	"log/slog"
+)
+
+type UseCase struct {
+	userUC usecase.UserUseCase
+	log    *slog.Logger
+}
+
+func New(userUC usecase.UserUseCase) *UseCase {
+	return &UseCase{userUC: userUC}
+}
+
+func NewWithLogger(userUC usecase.UserUseCase, log *slog.Logger) *UseCase {
+	return &UseCase{userUC: userUC, log: log}
+}
+
+// LoginWithOAuth — основная логика OAuth (чисто по boilerplate)
+func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error) {
+	if uc.log != nil {
+		uc.log.Info("oauth login started",
+			slog.String("provider", info.Provider),
+			slog.String("oauth_id", info.ID),
+		)
+	}
+
+	if info.ID == "" {
+		return "", definitions.ErrMissingOAuthCode
+	}
+
+	// 1. Ищем существующего пользователя
+	user, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
+	if err == nil && user != nil {
+		if uc.log != nil {
+			uc.log.Info("oauth user found", slog.String("user_id", user.ID.String()))
+		}
+		return user.ID.String(), nil
+	}
+
+	if err != nil && !errors.Is(err, definitions.ErrUserNotFound) {
+		return "", fmt.Errorf("failed to lookup oauth user: %w", err)
+	}
+
+	// 2. Создаём нового пользователя
+	createInput := dto.CreateUserInput{
+		Name:          info.Name,
+		Email:         info.Email,
+		OAuthID:       info.ID,
+		OAuthProvider: info.Provider,
+	}
+
+	if _, err = uc.userUC.Create(ctx, createInput); err != nil {
+		return "", fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// 3. Получаем реальный пользователь из БД (гарантируем правильный ID)
+	savedUser, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
+	if err != nil {
+		return "", fmt.Errorf("failed to get saved user after creation: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("new oauth user created", slog.String("user_id", savedUser.ID.String()))
+	}
+
+	return savedUser.ID.String(), nil
+}
+</file>
+
+<file path="internal/usecase/event/interfaces.go">
+package event
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+type Repository interface {
+	Create(ctx context.Context, event entity.Event) error
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
+	GetAll(ctx context.Context) ([]entity.Event, error)
+	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
+	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
+}
+</file>
+
+<file path="internal/usecase/event/usecase.go">
+package event
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/entity"
+
+	// Используем уже существующий интерфейс из participant
+	participant "secret-santa-backend/internal/usecase/participant"
+
+	"github.com/google/uuid"
+)
+
+type UseCase struct {
+	repo            Repository
+	participantRepo participant.Repository
+	log             *slog.Logger
+}
+
+func New(repo Repository) *UseCase {
+	return &UseCase{repo: repo}
+}
+
+func NewWithLogger(repo Repository, participantRepo participant.Repository, log *slog.Logger) *UseCase {
+	return &UseCase{
+		repo:            repo,
+		participantRepo: participantRepo,
+		log:             log,
+	}
+}
+
+// Create — создаёт событие + автоматически добавляет организатора как участника
+func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error) {
+	if uc.log != nil {
+		uc.log.Info("create event started",
+			slog.String("organizer_id", organizerID.String()),
+			slog.String("title", input.Title),
+		)
+	}
+
+	if organizerID == uuid.Nil {
+		return entity.Event{}, definitions.ErrInvalidUserInput
+	}
+
+	event := entity.NewEvent(
+		input.Title,
+		organizerID,
+		input.Description,
+		input.Rules,
+		input.Recommendations,
+		input.StartDate,
+		input.EndDate,
+		input.DrawDate,
+		input.MaxParticipants,
+	)
+
+	// 1. Создаём событие
+	if err := uc.repo.Create(ctx, event); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to create event", slog.String("error", err.Error()))
+		}
+		return entity.Event{}, fmt.Errorf("%w: %w", definitions.ErrConflict, err)
+	}
+
+	// 2. 🔥 Автоматически добавляем организатора как участника
+	organizerParticipant := entity.NewParticipant(event.ID, organizerID, entity.ParticipantRoleOrganizer)
+	if err := uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to create organizer as participant", slog.String("error", err.Error()))
+		}
+		return entity.Event{}, fmt.Errorf("failed to create organizer participant: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("event created successfully with organizer as participant",
+			slog.String("event_id", event.ID.String()),
+			slog.String("participant_id", organizerParticipant.ID.String()),
+		)
+	}
+	return event, nil
+}
+
+// ====================== Остальные методы без изменений ======================
+func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
+	if id == uuid.Nil {
+		return nil, definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("get event by id started", slog.String("event_id", id.String()))
+	}
+
+	event, err := uc.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+	}
+	return event, nil
+}
+
+func (uc *UseCase) GetAll(ctx context.Context) ([]entity.Event, error) {
+	if uc.log != nil {
+		uc.log.Info("get all events started")
+	}
+	return uc.repo.GetAll(ctx)
+}
+
+func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
+	if id == uuid.Nil {
+		return definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("update event started", slog.String("event_id", id.String()))
+	}
+
+	if err := uc.repo.Update(ctx, id, input); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to update event", slog.String("error", err.Error()))
+		}
+		return err
+	}
+
+	if uc.log != nil {
+		uc.log.Info("event updated successfully", slog.String("event_id", id.String()))
+	}
+	return nil
+}
+
+func (uc *UseCase) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
+	if id == uuid.Nil {
+		return definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("update event status started",
+			slog.String("event_id", id.String()),
+			slog.String("status", string(status)),
+		)
+	}
+
+	if err := uc.repo.UpdateStatus(ctx, id, status); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to update event status", slog.String("error", err.Error()))
+		}
+		return err
+	}
+
+	if uc.log != nil {
+		uc.log.Info("event status updated successfully", slog.String("event_id", id.String()))
+	}
+	return nil
+}
+
+func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
+	if id == uuid.Nil {
+		return definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("delete event started", slog.String("event_id", id.String()))
+	}
+
+	if err := uc.repo.Delete(ctx, id); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to delete event", slog.String("error", err.Error()))
+		}
+		return err
+	}
+
+	if uc.log != nil {
+		uc.log.Info("event deleted successfully", slog.String("event_id", id.String()))
+	}
+	return nil
+}
+
+func (uc *UseCase) Finish(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusFinished)
+}
+
+func (uc *UseCase) StartDrawing(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusDrawingPending)
+}
+
+func (uc *UseCase) OpenInvitation(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusInvitationOpen)
+}
+
+func (uc *UseCase) CloseRegistration(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusRegistrationClosed)
+}
+
+func (uc *UseCase) Cancel(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, entity.EventStatusCancelled)
+}
+
+func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newStatus entity.EventStatus) error {
+	if id == uuid.Nil || userID == uuid.Nil {
+		return definitions.ErrInvalidUserInput
+	}
+
+	eventPtr, err := uc.repo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+	}
+
+	if eventPtr.OrganizerID != userID {
+		return definitions.ErrNotOrganizer
+	}
+
+	if eventPtr.Status == newStatus {
+		return fmt.Errorf("%w: status already %s", definitions.ErrInvalidEventState, newStatus)
+	}
+
+	if err := eventPtr.TransitionTo(newStatus); err != nil {
+		return err
+	}
+
+	if err := uc.repo.UpdateStatus(ctx, id, eventPtr.Status); err != nil {
+		return err
+	}
+
+	if uc.log != nil {
+		uc.log.Info("event status changed",
+			slog.String("event_id", id.String()),
+			slog.String("old_status", string(eventPtr.Status)),
+			slog.String("new_status", string(newStatus)),
+		)
+	}
+	return nil
+}
+
+func (uc *UseCase) GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
+	if userID == uuid.Nil {
+		return nil, definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("get my events started", slog.String("user_id", userID.String()))
+	}
+
+	events, err := uc.repo.GetEventsForUser(ctx, userID)
+	if err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to get my events", slog.String("error", err.Error()))
+		}
+		return nil, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("my events returned successfully",
+			slog.String("user_id", userID.String()),
+			slog.Int("count", len(events)),
+		)
+	}
+	return events, nil
+}
+</file>
+
+<file path="internal/usecase/invitation/interfaces.go">
+package invitation
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+type Repository interface {
+	Create(ctx context.Context, invitation entity.Invitation) error
+	GetByToken(ctx context.Context, token string) (*entity.Invitation, error)
+}
+
+type EventRepository interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
+}
+</file>
+
+<file path="internal/usecase/invitation/usecase.go">
+package invitation
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/entity"
+	"secret-santa-backend/internal/usecase"
+
+	"github.com/google/uuid"
+)
+
+type UseCase struct {
+	repo          Repository
+	eventRepo     EventRepository
+	participantUC usecase.ParticipantUseCase
+	log           *slog.Logger
+}
+
+func New(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase) *UseCase {
+	return &UseCase{
+		repo:          repo,
+		eventRepo:     eventRepo,
+		participantUC: participantUC,
+	}
+}
+
+func NewWithLogger(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase, log *slog.Logger) *UseCase {
+	return &UseCase{
+		repo:          repo,
+		eventRepo:     eventRepo,
+		participantUC: participantUC,
+		log:           log,
+	}
+}
+
+func (uc *UseCase) GenerateInvite(ctx context.Context, input dto.CreateInvitationInput, organizerID uuid.UUID) (dto.InvitationResponse, error) {
+	if uc.log != nil {
+		uc.log.Info("generate invitation started",
+			slog.String("event_id", input.EventID.String()),
+			slog.String("organizer_id", organizerID.String()))
+	}
+
+	event, err := uc.eventRepo.GetByID(ctx, input.EventID)
+	if err != nil {
+		return dto.InvitationResponse{}, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+	}
+
+	if event.OrganizerID != organizerID {
+		return dto.InvitationResponse{}, definitions.ErrNotOrganizer
+	}
+
+	inv := entity.NewInvitation(input.EventID, organizerID, input.ExpiresIn)
+
+	if err := uc.repo.Create(ctx, inv); err != nil {
+		return dto.InvitationResponse{}, fmt.Errorf("failed to create invitation: %w", err)
+	}
+
+	inviteURL := fmt.Sprintf("https://yourdomain.com/invite/%s", inv.Token)
+
+	if uc.log != nil {
+		uc.log.Info("invitation generated", slog.String("token", inv.Token))
+	}
+
+	return dto.InvitationResponse{
+		InviteURL: inviteURL,
+		Token:     inv.Token,
+		ExpiresAt: inv.ExpiresAt,
+	}, nil
+}
+
+func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationInput) error {
+	if uc.log != nil {
+		uc.log.Info("join by invitation started", slog.String("token", input.Token))
+	}
+
+	inv, err := uc.repo.GetByToken(ctx, input.Token)
+	if err != nil {
+		return definitions.ErrNotFound
+	}
+
+	// Проверка срока действия
+	if !inv.IsValid() {
+		return definitions.ErrInvalidEventState
+	}
+
+	// Проверка статуса события
+	event, err := uc.eventRepo.GetByID(ctx, inv.EventID)
+	if err != nil {
+		return err
+	}
+
+	if !event.CanAddParticipants() {
+		return definitions.ErrInvalidEventState
+	}
+
+	// Добавляем участника через usecase (ВАЖНО)
+	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, entity.ParticipantRoleParticipant)
+	if err != nil {
+		return err
+	}
+
+	if uc.log != nil {
+		uc.log.Info("user joined via invitation",
+			slog.String("event_id", inv.EventID.String()),
+			slog.String("user_id", input.UserID.String()))
+	}
+
+	return nil
+}
+</file>
+
+<file path="internal/usecase/participant/interfaces.go">
+package participant
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+type Repository interface {
+	Create(ctx context.Context, participant entity.Participant) error
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
+	UpdateGiftSent(ctx context.Context, id uuid.UUID, sent bool) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error)
+}
+</file>
+
+<file path="internal/usecase/participant/usecase.go">
+package participant
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+type UseCase struct {
+	repo Repository
+	log  *slog.Logger
+}
+
+func New(repo Repository) *UseCase {
+	return &UseCase{repo: repo}
+}
+
+func NewWithLogger(repo Repository, log *slog.Logger) *UseCase {
+	return &UseCase{repo: repo, log: log}
+}
+
+// Create — добавляет участника в событие
+func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error) {
+	if uc.log != nil {
+		uc.log.Info("create participant started",
+			slog.String("event_id", eventID.String()),
+			slog.String("user_id", userID.String()),
+			slog.String("role", role),
+		)
+	}
+
+	participant := entity.NewParticipant(eventID, userID, role)
+
+	if err := uc.repo.Create(ctx, participant); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to create participant",
+				slog.String("event_id", eventID.String()),
+				slog.String("user_id", userID.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+		return entity.Participant{}, fmt.Errorf("failed to create participant: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("participant created successfully",
+			slog.String("participant_id", participant.ID.String()),
+			slog.String("event_id", eventID.String()),
+			slog.String("user_id", userID.String()),
+		)
+	}
+
+	return participant, nil
+}
+
+func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error) {
+	if id == uuid.Nil {
+		return nil, fmt.Errorf("participant id is required")
+	}
+	if uc.log != nil {
+		uc.log.Info("get participant by id started", slog.String("participant_id", id.String()))
+	}
+	return uc.repo.GetByID(ctx, id)
+}
+
+func (uc *UseCase) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error) {
+	if eventID == uuid.Nil {
+		return nil, fmt.Errorf("event id is required")
+	}
+	if uc.log != nil {
+		uc.log.Info("get participants by event started", slog.String("event_id", eventID.String()))
+	}
+	return uc.repo.GetByEvent(ctx, eventID)
+}
+
+// MarkGiftSent — отметка, что участник отправил подарок
+func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID uuid.UUID) error {
+	if participantID == uuid.Nil {
+		return fmt.Errorf("participant id is required")
+	}
+	if uc.log != nil {
+		uc.log.Info("mark gift sent started", slog.String("participant_id", participantID.String()))
+	}
+	if err := uc.repo.UpdateGiftSent(ctx, participantID, true); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to mark gift sent",
+				slog.String("participant_id", participantID.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+		return err
+	}
+	if uc.log != nil {
+		uc.log.Info("gift sent marked successfully", slog.String("participant_id", participantID.String()))
+	}
+	return nil
+}
+
+func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("participant id is required")
+	}
+	if uc.log != nil {
+		uc.log.Info("delete participant started", slog.String("participant_id", id.String()))
+	}
+	if err := uc.repo.Delete(ctx, id); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to delete participant",
+				slog.String("participant_id", id.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+		return err
+	}
+	if uc.log != nil {
+		uc.log.Info("participant deleted successfully", slog.String("participant_id", id.String()))
+	}
+	return nil
+}
+
+// GetByUserAndEvent — автоматически находит участника по user_id + event_id
+// (чтобы не нужно было вручную передавать participant_id)
+func (u *UseCase) GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error) {
+	if u.log != nil {
+		u.log.Info("get participant by user and event started",
+			slog.String("user_id", userID.String()),
+			slog.String("event_id", eventID.String()),
+		)
+	}
+	return u.repo.GetByUserAndEvent(ctx, userID, eventID)
+}
+</file>
+
+<file path="internal/usecase/user/interfaces.go">
+package user
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+// Repository — интерфейс, который должен реализовывать postgres-репозиторий
+type Repository interface {
+	Create(ctx context.Context, user entity.User) error
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
+	GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error)
+	GetAll(ctx context.Context) ([]entity.User, error)
+	Update(ctx context.Context, id uuid.UUID, name, email *string) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	GetByEmail(ctx context.Context, email string) (*entity.User, error)
+}
+</file>
+
+<file path="internal/usecase/user/usecase.go">
+package user
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+type UseCase struct {
+	repo Repository
+	log  *slog.Logger
+}
+
+func New(repo Repository) *UseCase {
+	return &UseCase{repo: repo}
+}
+
+func NewWithLogger(repo Repository, log *slog.Logger) *UseCase {
+	return &UseCase{repo: repo, log: log}
+}
+
+// Create
+func (uc *UseCase) Create(ctx context.Context, input dto.CreateUserInput) (entity.User, error) {
+	if uc.log != nil {
+		uc.log.Info("create user started",
+			slog.Any("email", input.Email),
+			slog.Any("oauth_provider", input.OAuthProvider),
+		)
+	}
+
+	if err := uc.validateCreateInput(input); err != nil {
+		if uc.log != nil {
+			uc.log.Warn("create user validation failed",
+				slog.Any("email", input.Email),
+				slog.String("error", err.Error()),
+			)
+		}
+		return entity.User{}, err
+	}
+
+	user := entity.NewUser(input.Name, input.Email, input.OAuthID, input.OAuthProvider)
+
+	if err := uc.repo.Create(ctx, user); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to create user",
+				slog.String("email", user.Email),
+				slog.String("error", err.Error()),
+			)
+		}
+		return entity.User{}, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("user created successfully",
+			slog.String("user_id", user.ID.String()),
+			slog.String("email", user.Email),
+		)
+	}
+
+	return user, nil
+}
+
+func (uc *UseCase) validateCreateInput(input dto.CreateUserInput) error {
+	if input.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if input.Email == "" {
+		return fmt.Errorf("email is required")
+	}
+	if input.OAuthID == "" {
+		return fmt.Errorf("oauthId is required")
+	}
+	if input.OAuthProvider == "" {
+		return fmt.Errorf("oauthProvider is required")
+	}
+	return nil
+}
+
+// GetByID
+func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
+	if id == uuid.Nil {
+		return nil, fmt.Errorf("id is required")
+	}
+	if uc.log != nil {
+		uc.log.Info("get user by id started", slog.String("user_id", id.String()))
+	}
+	return uc.repo.GetByID(ctx, id)
+}
+
+// GetByOAuthID
+func (uc *UseCase) GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error) {
+	if oauthID == "" || oauthProvider == "" {
+		return nil, fmt.Errorf("oauthId and oauthProvider are required")
+	}
+	if uc.log != nil {
+		uc.log.Info("get user by oauth started",
+			slog.String("oauth_id", oauthID),
+			slog.String("oauth_provider", oauthProvider),
+		)
+	}
+	return uc.repo.GetByOAuthID(ctx, oauthID, oauthProvider)
+}
+
+// GetAll
+func (uc *UseCase) GetAll(ctx context.Context) ([]entity.User, error) {
+	if uc.log != nil {
+		uc.log.Info("get all users started")
+	}
+	return uc.repo.GetAll(ctx)
+}
+
+// Update
+func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateUserInput) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("id is required")
+	}
+	if uc.log != nil {
+		uc.log.Info("update user started",
+			slog.String("user_id", id.String()),
+			slog.Any("name", input.Name),
+			slog.Any("email", input.Email),
+		)
+	}
+	if err := uc.repo.Update(ctx, id, input.Name, input.Email); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to update user",
+				slog.String("user_id", id.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+		return err
+	}
+	if uc.log != nil {
+		uc.log.Info("user updated successfully", slog.String("user_id", id.String()))
+	}
+	return nil
+}
+
+// Delete
+func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("id is required")
+	}
+	if uc.log != nil {
+		uc.log.Info("delete user started", slog.String("user_id", id.String()))
+	}
+	if err := uc.repo.Delete(ctx, id); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to delete user",
+				slog.String("user_id", id.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+		return err
+	}
+	if uc.log != nil {
+		uc.log.Info("user deleted successfully", slog.String("user_id", id.String()))
+	}
+	return nil
+}
+</file>
+
+<file path="internal/usecase/wishlist/interfaces.go">
+package wishlist
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+type Repository interface {
+	Create(ctx context.Context, wishlist entity.Wishlist) error
+	CreateItem(ctx context.Context, item entity.WishlistItem) error
+	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
+	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
+}
+
+// FIXED: добавили ParticipantRepository, чтобы получить UserID участника
+// (нужно для корректной проверки "являешься ли ты Сантой")
+type ParticipantRepository interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
+}
+
+type AssignmentRepository interface {
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
+}
+</file>
+
+<file path="internal/usecase/wishlist/usecase.go">
+package wishlist
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	"secret-santa-backend/internal/definitions" // ← добавлен
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5" // ← добавлен для ErrNoRows
+)
+
+type UseCase struct {
+	repo            Repository
+	participantRepo ParticipantRepository
+	assignmentRepo  AssignmentRepository
+	log             *slog.Logger
+}
+
+func New(repo Repository) *UseCase {
+	return &UseCase{repo: repo}
+}
+
+func NewWithLogger(repo Repository, participantRepo ParticipantRepository, assignmentRepo AssignmentRepository, log *slog.Logger) *UseCase {
+	return &UseCase{
+		repo:            repo,
+		participantRepo: participantRepo,
+		assignmentRepo:  assignmentRepo,
+		log:             log,
+	}
+}
+
+// Create — создаёт вишлист для участника
+func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibility string) (entity.Wishlist, error) {
+	if uc.log != nil {
+		uc.log.Info("create wishlist started",
+			slog.String("participant_id", participantID.String()),
+			slog.String("visibility", visibility),
+		)
+	}
+
+	wishlist := entity.NewWishlist(participantID, visibility)
+
+	if err := uc.repo.Create(ctx, wishlist); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to create wishlist",
+				slog.String("participant_id", participantID.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+		return entity.Wishlist{}, fmt.Errorf("failed to create wishlist: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("wishlist created successfully",
+			slog.String("wishlist_id", wishlist.ID.String()),
+			slog.String("participant_id", participantID.String()),
+		)
+	}
+
+	return wishlist, nil
+}
+
+// AddItem — добавляет элемент в вишлист
+func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
+	if uc.log != nil {
+		uc.log.Info("add wishlist item started",
+			slog.String("wishlist_id", wishlistID.String()),
+			slog.String("title", title),
+			slog.Any("link", link),
+			slog.Any("image_url", imageURL),
+			slog.Any("comment", comment),
+		)
+	}
+
+	item := entity.NewWishlistItem(wishlistID, title, link, imageURL, comment)
+
+	if err := uc.repo.CreateItem(ctx, item); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to add wishlist item",
+				slog.String("wishlist_id", wishlistID.String()),
+				slog.String("title", title),
+				slog.String("error", err.Error()),
+			)
+		}
+		return entity.WishlistItem{}, fmt.Errorf("failed to add item: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("wishlist item added successfully",
+			slog.String("wishlist_id", wishlistID.String()),
+			slog.String("item_id", item.ID.String()),
+		)
+	}
+
+	return item, nil
+}
+
+func (uc *UseCase) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
+	if participantID == uuid.Nil {
+		return nil, fmt.Errorf("participant id is required")
+	}
+	if uc.log != nil {
+		uc.log.Info("get wishlist by participant started", slog.String("participant_id", participantID.String()))
+	}
+	return uc.repo.GetByParticipant(ctx, participantID)
+}
+
+func (uc *UseCase) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error) {
+	if wishlistID == uuid.Nil {
+		return nil, fmt.Errorf("wishlist id is required")
+	}
+	if uc.log != nil {
+		uc.log.Info("get wishlist items started", slog.String("wishlist_id", wishlistID.String()))
+	}
+	return uc.repo.GetItems(ctx, wishlistID)
+}
+
+// GetForUser — возвращает вишлист только если requester является Сантой
+func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error) {
+	if eventID == uuid.Nil || participantID == uuid.Nil || requesterID == uuid.Nil {
+		return nil, fmt.Errorf("eventID, participantID and requesterID are required")
+	}
+
+	if uc.log != nil {
+		uc.log.Info("get wishlist for user started",
+			slog.String("event_id", eventID.String()),
+			slog.String("participant_id", participantID.String()),
+			slog.String("requester_id", requesterID.String()),
+		)
+	}
+
+	// 1. Получаем вишлист
+	wishlist, err := uc.repo.GetByParticipant(ctx, participantID)
+	if err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to get wishlist by participant",
+				slog.String("participant_id", participantID.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+		// 🔥 КРИТИЧЕСКИЙ ФИКС: теперь возвращаем 404 вместо 500
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %w", definitions.ErrWishlistNotFound, err)
+		}
+		return nil, fmt.Errorf("wishlist not found: %w", err)
+	}
+
+	// 2. Получаем участника (чтобы узнать реальный UserID получателя)
+	participant, err := uc.participantRepo.GetByID(ctx, participantID)
+	if err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to get participant by id",
+				slog.String("participant_id", participantID.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+		return nil, fmt.Errorf("failed to get participant: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("participant found",
+			slog.String("participant_id", participant.ID.String()),
+			slog.String("user_id", participant.UserID.String()),
+		)
+	}
+
+	// 3. Получаем все назначения события
+	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
+	if err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to get assignments",
+				slog.String("event_id", eventID.String()),
+				slog.String("error", err.Error()),
+			)
+		}
+		return nil, fmt.Errorf("failed to check assignment: %w", err)
+	}
+
+	// 4. Проверяем, является ли requester Сантой для этого получателя
+	isSanta := false
+	for _, a := range assignments {
+		if a.GiverID == requesterID && a.ReceiverID == participant.UserID {
+			isSanta = true
+			break
+		}
+	}
+
+	if !isSanta {
+		if uc.log != nil {
+			uc.log.Warn("wishlist access denied: not the santa",
+				slog.String("requester_id", requesterID.String()),
+				slog.String("receiver_user_id", participant.UserID.String()),
+			)
+		}
+		return nil, fmt.Errorf("you are not the santa for this participant")
+	}
+
+	if uc.log != nil {
+		uc.log.Info("wishlist access granted to santa",
+			slog.String("requester_id", requesterID.String()),
+			slog.String("receiver_user_id", participant.UserID.String()),
+		)
+	}
+
+	return wishlist, nil
+}
+</file>
+
+<file path="internal/usecase/contracts.go">
+package usecase
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+// UserUseCase — публичный интерфейс
+type UserUseCase interface {
+	Create(ctx context.Context, input dto.CreateUserInput) (entity.User, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
+	GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error)
+	GetAll(ctx context.Context) ([]entity.User, error)
+	Update(ctx context.Context, id uuid.UUID, input dto.UpdateUserInput) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+// EventUseCase — полный интерфейс событий (обновлённый)
+type EventUseCase interface {
+	Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
+	GetAll(ctx context.Context) ([]entity.Event, error)
+	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
+	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error
+	Delete(ctx context.Context, id uuid.UUID) error
+
+	// === Работа со статусами ===
+	OpenInvitation(ctx context.Context, id, userID uuid.UUID) error
+	CloseRegistration(ctx context.Context, id, userID uuid.UUID) error
+	StartDrawing(ctx context.Context, id, userID uuid.UUID) error
+	Finish(ctx context.Context, id, userID uuid.UUID) error
+	Cancel(ctx context.Context, id, userID uuid.UUID) error
+
+	GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
+}
+
+// ParticipantUseCase
+type ParticipantUseCase interface {
+	Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
+	MarkGiftSent(ctx context.Context, participantID uuid.UUID) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error)
+}
+
+// WishlistUseCase
+type WishlistUseCase interface {
+	Create(ctx context.Context, participantID uuid.UUID, visibility string) (entity.Wishlist, error)
+	AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error)
+	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
+	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
+	GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error)
+}
+
+// AssignmentUseCase
+type AssignmentUseCase interface {
+	Draw(ctx context.Context, eventID, userID uuid.UUID) error
+	GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error)
+}
+
+// ParticipantRepository (для AssignmentUseCase)
+type ParticipantRepository interface {
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
+}
+
+// InvitationUseCase — публичный интерфейс приглашений
+type InvitationUseCase interface {
+	GenerateInvite(ctx context.Context, input dto.CreateInvitationInput, organizerID uuid.UUID) (dto.InvitationResponse, error)
+	JoinByInvite(ctx context.Context, input dto.JoinByInvitationInput) error
+}
+</file>
+
+<file path="migrations/000001_test_migration.down.sql">
+-- +goose Down
+-- +goose StatementBegin
+
+DROP TABLE IF EXISTS wishlist_items;
+DROP TABLE IF EXISTS wishlists;
+DROP TABLE IF EXISTS assignments;
+DROP TABLE IF EXISTS participants;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS invitations;
+-- +goose StatementEnd
+</file>
+
+<file path="migrations/000001_test_migration.up.sql">
+-- +goose Up
+-- +goose StatementBegin
+
+-- Включаем расширение для UUID
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ==================== USERS ====================
+CREATE TABLE IF NOT EXISTS users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            TEXT NOT NULL,
+    email           TEXT UNIQUE NOT NULL,
+    oauth_id        TEXT UNIQUE NOT NULL DEFAULT '',
+    oauth_provider  TEXT NOT NULL DEFAULT '',
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+COMMENT ON TABLE users IS 'Пользователи системы';
+COMMENT ON COLUMN users.id IS 'Уникальный идентификатор пользователя';
+COMMENT ON COLUMN users.name IS 'Имя пользователя';
+COMMENT ON COLUMN users.email IS 'Email пользователя';
+COMMENT ON COLUMN users.oauth_id IS 'Идентификатор пользователя у провайдера OAuth';
+COMMENT ON COLUMN users.oauth_provider IS 'Название провайдера OAuth';
+COMMENT ON COLUMN users.created_at IS 'Дата создания';
+COMMENT ON COLUMN users.updated_at IS 'Дата последнего обновления';
+
+CREATE INDEX IF NOT EXISTS idx_users_oauth ON users(oauth_id, oauth_provider);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- ==================== EVENTS ====================
+CREATE TABLE IF NOT EXISTS events (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title               TEXT NOT NULL,
+    description         TEXT,
+    rules               TEXT,
+    recommendations     TEXT,
+    organizer_id        UUID NOT NULL,
+    start_date          TIMESTAMPTZ NOT NULL,
+    draw_date           TIMESTAMPTZ,
+    end_date            TIMESTAMPTZ NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'draft',
+    max_participants    INT NOT NULL DEFAULT 0,
+    created_at          TIMESTAMPTZ DEFAULT now(),
+    updated_at          TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT fk_events_organizer 
+        FOREIGN KEY (organizer_id) 
+        REFERENCES users(id) 
+        ON DELETE CASCADE
+);
+
+COMMENT ON TABLE events IS 'События "Тайный Санта"';
+COMMENT ON COLUMN events.id IS 'Уникальный идентификатор события';
+COMMENT ON COLUMN events.title IS 'Название события';
+COMMENT ON COLUMN events.description IS 'Описание события';
+COMMENT ON COLUMN events.rules IS 'Правила события';
+COMMENT ON COLUMN events.recommendations IS 'Рекомендации и пожелания';
+COMMENT ON COLUMN events.organizer_id IS 'Организатор события';
+COMMENT ON COLUMN events.start_date IS 'Дата начала события';
+COMMENT ON COLUMN events.draw_date IS 'Дата проведения жеребьёвки';
+COMMENT ON COLUMN events.end_date IS 'Дата окончания события';
+COMMENT ON COLUMN events.status IS 'Статус события (draft, active, finished, cancelled)';
+COMMENT ON COLUMN events.max_participants IS 'Максимальное количество участников';
+COMMENT ON COLUMN events.created_at IS 'Дата создания';
+COMMENT ON COLUMN events.updated_at IS 'Дата последнего обновления';
+
+CREATE INDEX IF NOT EXISTS idx_events_organizer ON events(organizer_id);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+
+-- ==================== PARTICIPANTS ====================
+CREATE TABLE IF NOT EXISTS participants (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id      UUID NOT NULL,
+    user_id       UUID NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'participant',
+    gift_sent     BOOLEAN NOT NULL DEFAULT false,
+    gift_sent_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ DEFAULT now(),
+    updated_at    TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT fk_participants_event 
+        FOREIGN KEY (event_id) 
+        REFERENCES events(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_participants_user 
+        FOREIGN KEY (user_id) 
+        REFERENCES users(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT unique_event_user UNIQUE (event_id, user_id)
+);
+
+COMMENT ON TABLE participants IS 'Участники событий';
+COMMENT ON COLUMN participants.id IS 'Уникальный идентификатор участника';
+COMMENT ON COLUMN participants.event_id IS 'Событие';
+COMMENT ON COLUMN participants.user_id IS 'Пользователь';
+COMMENT ON COLUMN participants.role IS 'Роль участника (organizer / participant)';
+COMMENT ON COLUMN participants.gift_sent IS 'Подарок отправлен';
+COMMENT ON COLUMN participants.gift_sent_at IS 'Дата отправки подарка';
+COMMENT ON COLUMN participants.created_at IS 'Дата создания';
+COMMENT ON COLUMN participants.updated_at IS 'Дата последнего обновления';
+
+CREATE INDEX IF NOT EXISTS idx_participants_event ON participants(event_id);
+CREATE INDEX IF NOT EXISTS idx_participants_user ON participants(user_id);
+CREATE INDEX IF NOT EXISTS idx_participants_role ON participants(role);
+
+-- ==================== ASSIGNMENTS ====================
+CREATE TABLE IF NOT EXISTS assignments (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id     UUID NOT NULL,
+    giver_id     UUID NOT NULL,
+    receiver_id  UUID NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT fk_assignments_event 
+        FOREIGN KEY (event_id) 
+        REFERENCES events(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_assignments_giver 
+        FOREIGN KEY (giver_id) 
+        REFERENCES users(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_assignments_receiver 
+        FOREIGN KEY (receiver_id) 
+        REFERENCES users(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT unique_event_giver UNIQUE (event_id, giver_id)
+);
+
+COMMENT ON TABLE assignments IS 'Назначения "кто кому дарит" (жеребьёвка)';
+COMMENT ON COLUMN assignments.id IS 'Уникальный идентификатор назначения';
+COMMENT ON COLUMN assignments.event_id IS 'Событие';
+COMMENT ON COLUMN assignments.giver_id IS 'Кто дарит';
+COMMENT ON COLUMN assignments.receiver_id IS 'Кому дарит';
+COMMENT ON COLUMN assignments.created_at IS 'Дата создания';
+
+CREATE INDEX IF NOT EXISTS idx_assignments_event ON assignments(event_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_giver ON assignments(giver_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_receiver ON assignments(receiver_id);
+
+-- ==================== WISHLISTS ====================
+CREATE TABLE IF NOT EXISTS wishlists (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    participant_id  UUID NOT NULL,
+    visibility      TEXT NOT NULL DEFAULT 'santa_only',
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT fk_wishlists_participant 
+        FOREIGN KEY (participant_id) 
+        REFERENCES participants(id) 
+        ON DELETE CASCADE
+);
+
+COMMENT ON TABLE wishlists IS 'Вишлисты участников';
+COMMENT ON COLUMN wishlists.id IS 'Уникальный идентификатор вишлиста';
+COMMENT ON COLUMN wishlists.participant_id IS 'Участник';
+COMMENT ON COLUMN wishlists.visibility IS 'Видимость вишлиста (all / friends / santa_only)';
+COMMENT ON COLUMN wishlists.created_at IS 'Дата создания';
+COMMENT ON COLUMN wishlists.updated_at IS 'Дата последнего обновления';
+
+CREATE INDEX IF NOT EXISTS idx_wishlists_participant ON wishlists(participant_id);
+
+-- ==================== WISHLIST ITEMS ====================
+CREATE TABLE IF NOT EXISTS wishlist_items (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    wishlist_id  UUID NOT NULL,
+    title        TEXT NOT NULL,
+    link         TEXT,
+    image_url    TEXT,
+    comment      TEXT,
+    created_at   TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT fk_wishlist_items_wishlist 
+        FOREIGN KEY (wishlist_id) 
+        REFERENCES wishlists(id) 
+        ON DELETE CASCADE
+);
+
+COMMENT ON TABLE wishlist_items IS 'Элементы вишлиста';
+COMMENT ON COLUMN wishlist_items.id IS 'Уникальный идентификатор элемента';
+COMMENT ON COLUMN wishlist_items.wishlist_id IS 'Вишлист';
+COMMENT ON COLUMN wishlist_items.title IS 'Название желаемого подарка';
+COMMENT ON COLUMN wishlist_items.link IS 'Ссылка на подарок';
+COMMENT ON COLUMN wishlist_items.image_url IS 'Ссылка на изображение';
+COMMENT ON COLUMN wishlist_items.comment IS 'Комментарий';
+COMMENT ON COLUMN wishlist_items.created_at IS 'Дата добавления';
+
+CREATE INDEX IF NOT EXISTS idx_wishlist_items_wishlist ON wishlist_items(wishlist_id);
+
+CREATE TABLE IF NOT EXISTS invitations (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id    UUID NOT NULL,
+    token       TEXT UNIQUE NOT NULL,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_by  UUID NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    updated_at  TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT fk_invitations_event 
+        FOREIGN KEY (event_id) 
+        REFERENCES events(id) 
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_invitations_created_by 
+        FOREIGN KEY (created_by) 
+        REFERENCES users(id) 
+        ON DELETE CASCADE
+);
+
+COMMENT ON TABLE invitations IS 'Приглашения по ссылке для событий Тайный Санта (многоразовые)';
+COMMENT ON COLUMN invitations.id IS 'Уникальный идентификатор приглашения';
+COMMENT ON COLUMN invitations.event_id IS 'Событие, к которому приглашение';
+COMMENT ON COLUMN invitations.token IS 'Уникальный токен для ссылки';
+COMMENT ON COLUMN invitations.expires_at IS 'Срок действия приглашения';
+COMMENT ON COLUMN invitations.created_by IS 'Кто создал приглашение (организатор)';
+COMMENT ON COLUMN invitations.created_at IS 'Дата создания';
+COMMENT ON COLUMN invitations.updated_at IS 'Дата последнего обновления';
+
+CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
+CREATE INDEX IF NOT EXISTS idx_invitations_event ON invitations(event_id);
+
+-- +goose StatementEnd
+</file>
+
+<file path=".env.example">
+# База данных (PostgreSQL)
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=
+POSTGRES_DB=secretsanta
+DATABASE_URL=postgres://postgres:password@localhost:5432/secretsanta?sslmode=disable
+
+# GitHub OAuth2
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GITHUB_REDIRECT_URL=http://localhost:8080/auth/callback
+
+# JWT
+JWT_SECRET=your-secret-key-change-me
+</file>
+
+<file path=".gitignore">
+.env
+out/pgdata/
+</file>
+
+<file path="docker-compose.yaml">
+services:
+  postgres:
+    image: postgres:18.3-bookworm
+    container_name: santa_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ${PROJECT_ROOT}/out/pgdata:/var/lib/postgresql
+
+  migrate:
+    image: migrate/migrate:v4.19.1
+    container_name: santa_migrate
+    volumes:
+      - ${PROJECT_ROOT}/migrations:/migrations
+</file>
+
+<file path="go.mod">
+module secret-santa-backend
+
+go 1.25.5
+
+require (
+	github.com/Masterminds/squirrel v1.5.4
+	github.com/go-chi/chi/v5 v5.2.5
+	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/google/uuid v1.6.0
+	github.com/jackc/pgx/v5 v5.8.0
+	github.com/joho/godotenv v1.5.1
+	golang.org/x/oauth2 v0.36.0
+)
+
+require (
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
+	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
+)
+</file>
+
+<file path="Makefile">
+include .env
+export 
+
+export PROJECT_ROOT=$(shell pwd)
+
+env-up:
+	@docker compose up -d postgres
+
+env-down:
+	@docker compose down postgres
+
+env-run:
+	@go run ./cmd/app/main.go
+
+env-cleanup:
+	@read -p "очистить все volume файлы окружения? Опасность утери данных.[y/n]: " ans; \
+	if [ "$$ans" = "y" ]; then \
+		docker compose down postgres && \
+		sudo rm -rf out/pgdata && \
+		echo "Файлы окружения очищены"; \
+	else \
+		echo "Очистка окружения отменена"; \
+	fi
+
+migrate-create:
+	@if  [ -z "$(seq)" ]; then \
+	echo "Отсутствует необходимый параметр seq. Пример make migrate-create seq=init"; \
+	exit 1; \
+	fi;
+	docker compose run --rm migrate \
+		create \
+		-ext sql \
+		-dir /migrations \
+		-seq "$(seq)"
+
+migrate-up:
+	@make migrate-action action=up
+
+migrate-down:
+	@make migrate-action action=down
+
+migrate-action:
+	@if  [ -z "$(action)" ]; then \
+		echo "Отсутствует необходимый параметр action. Пример make migrate-action action=up"; \
+		exit 1; \
+	fi;
+	docker compose run --rm migrate \
+		-path /migrations \
+		-database postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable \
+		"$(action)"
+</file>
+
+</files>

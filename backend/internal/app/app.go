@@ -61,7 +61,9 @@ func New() *App {
 	userUC := userusecase.NewWithLogger(userRepo, log)
 	authUC := authusecase.NewWithLogger(userUC, log)
 
-	eventUC := eventusecase.NewWithLogger(eventRepo, log)
+	// 🔥 ИСПРАВЛЕНО: теперь передаём participantRepo
+	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
+
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
 
 	assignmentUC := assignmentusecase.NewWithLogger(
@@ -71,7 +73,6 @@ func New() *App {
 		log,
 	)
 
-	// FIXED: теперь передаём participantRepo (нужен для GetForUser)
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
 
 	invitationUC := invitationusecase.NewWithLogger(
@@ -107,17 +108,14 @@ func New() *App {
 	// ==================== Router ====================
 	r := chi.NewRouter()
 
-	// 🔥 Глобальные middleware (ВАЖЕН ПОРЯДОК)
 	r.Use(middleware.RecoveryMiddleware)
 	r.Use(middleware.TimeoutMiddleware(10 * time.Second))
 
-	// ==================== Public routes ====================
 	r.Route("/auth", func(r chi.Router) {
 		r.Get("/login", authHandler.Login)
 		r.Get("/callback", authHandler.Callback)
 	})
 
-	// ==================== Protected routes ====================
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.NewAuthMiddleware(jwtManager, log).Handler)
 
@@ -155,6 +153,10 @@ func New() *App {
 		r.Route("/users/{userId}/wishlist", func(r chi.Router) {
 			r.Post("/", wishlistHandler.Create)
 			r.Get("/", wishlistHandler.GetByUser)
+		})
+
+		r.Route("/wishlists/{participantId}", func(r chi.Router) {
+			r.Get("/", wishlistHandler.GetByParticipant)
 		})
 
 		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {

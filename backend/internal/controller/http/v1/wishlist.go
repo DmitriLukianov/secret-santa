@@ -26,6 +26,7 @@ func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.Partic
 	}
 }
 
+// Create — создание вишлиста
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
@@ -62,6 +63,42 @@ func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.WishlistToResponse(&wishlist))
 }
 
+// GetByParticipant — главный метод для Санты
+func (h *WishlistHandler) GetByParticipant(w http.ResponseWriter, r *http.Request) {
+	participantIDStr := chi.URLParam(r, "participantId")
+	participantID, err := uuid.Parse(participantIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	eventIDStr := r.URL.Query().Get("eventId")
+	if eventIDStr == "" {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	wishlist, err := h.uc.GetForUser(r.Context(), eventID, participantID, userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.WishlistToResponse(wishlist))
+}
+
 func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)
@@ -85,7 +122,7 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		&req.Comment,
 	)
 	if err != nil {
-		response.WriteHTTPError(w, err) // ✅ FIX
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -94,6 +131,7 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.WishlistItemToResponse(&item))
 }
 
+// GetByUser — теперь правильно получает СВОЙ вишлист (для владельца)
 func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
@@ -119,7 +157,8 @@ func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wishlist, err := h.uc.GetForUser(r.Context(), eventID, participant.ID, userID)
+	// 🔥 КРИТИЧЕСКИЙ ФИКС: владелец смотрит свой вишлист напрямую
+	wishlist, err := h.uc.GetByParticipant(r.Context(), participant.ID)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -128,6 +167,7 @@ func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response.WishlistToResponse(wishlist))
 }
+
 func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)

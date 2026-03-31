@@ -2,7 +2,9 @@ package wishlist
 
 import (
 	"context"
+	"fmt"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
@@ -18,6 +20,12 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
+	// 🔥 КРИТИЧЕСКИЙ ФИКС: проверяем, что вишлист для этого участника ещё не существует
+	existing, err := r.GetByParticipant(ctx, w.ParticipantID)
+	if err == nil && existing != nil {
+		return fmt.Errorf("wishlist already exists for participant %s: %w", w.ParticipantID, definitions.ErrConflict)
+	}
+
 	query := createWishlistQuery().
 		Values(w.ID, w.ParticipantID, w.Visibility, w.CreatedAt, w.UpdatedAt)
 

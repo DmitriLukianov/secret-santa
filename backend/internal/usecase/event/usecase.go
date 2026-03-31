@@ -9,23 +9,31 @@ import (
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
+	// Используем уже существующий интерфейс из participant
+	participant "secret-santa-backend/internal/usecase/participant"
+
 	"github.com/google/uuid"
 )
 
 type UseCase struct {
-	repo Repository
-	log  *slog.Logger
+	repo            Repository
+	participantRepo participant.Repository
+	log             *slog.Logger
 }
 
 func New(repo Repository) *UseCase {
 	return &UseCase{repo: repo}
 }
 
-func NewWithLogger(repo Repository, log *slog.Logger) *UseCase {
-	return &UseCase{repo: repo, log: log}
+func NewWithLogger(repo Repository, participantRepo participant.Repository, log *slog.Logger) *UseCase {
+	return &UseCase{
+		repo:            repo,
+		participantRepo: participantRepo,
+		log:             log,
+	}
 }
 
-// Create — создаёт событие в статусе draft
+// Create — создаёт событие + автоматически добавляет организатора как участника
 func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error) {
 	if uc.log != nil {
 		uc.log.Info("create event started",
@@ -50,6 +58,7 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		input.MaxParticipants,
 	)
 
+	// 1. Создаём событие
 	if err := uc.repo.Create(ctx, event); err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create event", slog.String("error", err.Error()))
@@ -57,12 +66,25 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		return entity.Event{}, fmt.Errorf("%w: %w", definitions.ErrConflict, err)
 	}
 
+	// 2. 🔥 Автоматически добавляем организатора как участника
+	organizerParticipant := entity.NewParticipant(event.ID, organizerID, entity.ParticipantRoleOrganizer)
+	if err := uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to create organizer as participant", slog.String("error", err.Error()))
+		}
+		return entity.Event{}, fmt.Errorf("failed to create organizer participant: %w", err)
+	}
+
 	if uc.log != nil {
-		uc.log.Info("event created successfully", slog.String("event_id", event.ID.String()))
+		uc.log.Info("event created successfully with organizer as participant",
+			slog.String("event_id", event.ID.String()),
+			slog.String("participant_id", organizerParticipant.ID.String()),
+		)
 	}
 	return event, nil
 }
 
+// ====================== Остальные методы без изменений ======================
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	if id == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -108,7 +130,6 @@ func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEve
 	return nil
 }
 
-// UpdateStatus — ОБЯЗАТЕЛЬНЫЙ метод для интерфейса
 func (uc *UseCase) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
 	if id == uuid.Nil {
 		return definitions.ErrInvalidUserInput
@@ -156,17 +177,14 @@ func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// Finish — завершает событие
 func (uc *UseCase) Finish(ctx context.Context, id, userID uuid.UUID) error {
 	return uc.changeStatus(ctx, id, userID, entity.EventStatusFinished)
 }
 
-// StartDrawing — готов к жеребьёвке
 func (uc *UseCase) StartDrawing(ctx context.Context, id, userID uuid.UUID) error {
 	return uc.changeStatus(ctx, id, userID, entity.EventStatusDrawingPending)
 }
 
-// OpenInvitation, CloseRegistration, Cancel — добавлены для полноты
 func (uc *UseCase) OpenInvitation(ctx context.Context, id, userID uuid.UUID) error {
 	return uc.changeStatus(ctx, id, userID, entity.EventStatusInvitationOpen)
 }
@@ -179,8 +197,6 @@ func (uc *UseCase) Cancel(ctx context.Context, id, userID uuid.UUID) error {
 	return uc.changeStatus(ctx, id, userID, entity.EventStatusCancelled)
 }
 
-// Внутренний метод для смены статуса
-// changeStatus — центральный и единственный метод смены статуса
 func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newStatus entity.EventStatus) error {
 	if id == uuid.Nil || userID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
@@ -195,7 +211,6 @@ func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newSt
 		return definitions.ErrNotOrganizer
 	}
 
-	// Защита от повторного действия
 	if eventPtr.Status == newStatus {
 		return fmt.Errorf("%w: status already %s", definitions.ErrInvalidEventState, newStatus)
 	}
