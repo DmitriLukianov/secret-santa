@@ -14,3 +14,13 @@ type Repository interface {
 	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
 }
+
+// FIXED: добавили ParticipantRepository, чтобы получить UserID участника
+// (нужно для корректной проверки "являешься ли ты Сантой")
+type ParticipantRepository interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
+}
+
+type AssignmentRepository interface {
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
+}

@@ -2,7 +2,6 @@ package v1
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -58,17 +57,9 @@ func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := response.WishlistResponse{
-		ID:            wishlist.ID.String(),
-		ParticipantID: wishlist.ParticipantID.String(),
-		Visibility:    wishlist.Visibility,
-		CreatedAt:     wishlist.CreatedAt,
-		UpdatedAt:     wishlist.UpdatedAt,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.WishlistToResponse(&wishlist))
 }
 
 func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
@@ -94,22 +85,13 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		&req.Comment,
 	)
 	if err != nil {
-		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		response.WriteHTTPError(w, err) // ✅ FIX
 		return
-	}
-
-	resp := response.WishlistItemResponse{
-		ID:        item.ID.String(),
-		Title:     item.Title,
-		Link:      item.Link,
-		ImageURL:  item.ImageURL,
-		Comment:   item.Comment,
-		CreatedAt: item.CreatedAt,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.WishlistItemToResponse(&item))
 }
 
 func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
@@ -139,26 +121,13 @@ func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 
 	wishlist, err := h.uc.GetForUser(r.Context(), eventID, participant.ID, userID)
 	if err != nil {
-		if errors.Is(err, definitions.ErrNotSanta) {
-			response.WriteHTTPError(w, definitions.ErrForbidden)
-			return
-		}
 		response.WriteHTTPError(w, err)
 		return
 	}
 
-	resp := response.WishlistResponse{
-		ID:            wishlist.ID.String(),
-		ParticipantID: wishlist.ParticipantID.String(),
-		Visibility:    wishlist.Visibility,
-		CreatedAt:     wishlist.CreatedAt,
-		UpdatedAt:     wishlist.UpdatedAt,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.WishlistToResponse(wishlist))
 }
-
 func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)
@@ -175,14 +144,7 @@ func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 
 	var resp []response.WishlistItemResponse
 	for _, item := range items {
-		resp = append(resp, response.WishlistItemResponse{
-			ID:        item.ID.String(),
-			Title:     item.Title,
-			Link:      item.Link,
-			ImageURL:  item.ImageURL,
-			Comment:   item.Comment,
-			CreatedAt: item.CreatedAt,
-		})
+		resp = append(resp, response.WishlistItemToResponse(&item))
 	}
 
 	w.Header().Set("Content-Type", "application/json")

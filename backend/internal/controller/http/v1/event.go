@@ -58,7 +58,7 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response.EventResponseFromEntity(event))
+	json.NewEncoder(w).Encode(response.EventToResponse(&event))
 }
 
 func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +76,7 @@ func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response.EventResponseFromEntity(*event))
+	json.NewEncoder(w).Encode(response.EventToResponse(event))
 }
 
 func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
@@ -86,13 +86,8 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var resp []response.EventResponse
-	for _, e := range events {
-		resp = append(resp, response.EventResponseFromEntity(e))
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.EventsToResponse(events))
 }
 
 func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +139,7 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ==================== Статусы событий ====================
+// ==================== Статусы ====================
 
 func (h *EventHandler) OpenInvitation(w http.ResponseWriter, r *http.Request) {
 	h.changeStatus(w, r, h.uc.OpenInvitation)
@@ -166,8 +161,11 @@ func (h *EventHandler) CancelEvent(w http.ResponseWriter, r *http.Request) {
 	h.changeStatus(w, r, h.uc.Cancel)
 }
 
-// Универсальный helper (чисто и безопасно)
-func (h *EventHandler) changeStatus(w http.ResponseWriter, r *http.Request, action func(ctx context.Context, id, userID uuid.UUID) error) {
+func (h *EventHandler) changeStatus(
+	w http.ResponseWriter,
+	r *http.Request,
+	action func(ctx context.Context, id, userID uuid.UUID) error,
+) {
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)

@@ -3,6 +3,7 @@ package app
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -48,7 +49,7 @@ func New() *App {
 		panic(err)
 	}
 
-	// Репозитории
+	// ==================== Репозитории ====================
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
 	participantRepo := participantrepo.New(db)
@@ -56,17 +57,31 @@ func New() *App {
 	wishlistRepo := wishlistrepo.New(db)
 	invitationRepo := invitationrepo.New(db)
 
-	// UseCases
+	// ==================== UseCases ====================
 	userUC := userusecase.NewWithLogger(userRepo, log)
 	authUC := authusecase.NewWithLogger(userUC, log)
 
 	eventUC := eventusecase.NewWithLogger(eventRepo, log)
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
-	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventUC, log)
-	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, assignmentUC, log)
-	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventUC, participantUC, log)
 
-	// Handlers
+	assignmentUC := assignmentusecase.NewWithLogger(
+		assignmentRepo,
+		participantRepo,
+		eventRepo,
+		log,
+	)
+
+	// FIXED: теперь передаём participantRepo (нужен для GetForUser)
+	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
+
+	invitationUC := invitationusecase.NewWithLogger(
+		invitationRepo,
+		eventRepo,
+		participantUC,
+		log,
+	)
+
+	// ==================== Handlers ====================
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
@@ -74,7 +89,7 @@ func New() *App {
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	invitationHandler := v1.NewInvitationHandler(invitationUC)
 
-	// Auth
+	// ==================== Auth ====================
 	jwtManager, err := oauth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
 	if err != nil {
 		log.Error("failed to create JWT manager", slog.String("error", err.Error()))
@@ -89,14 +104,20 @@ func New() *App {
 
 	authHandler := v1.NewAuthHandler(authProvider, jwtManager, authUC)
 
-	// Router
+	// ==================== Router ====================
 	r := chi.NewRouter()
 
+	// 🔥 Глобальные middleware (ВАЖЕН ПОРЯДОК)
+	r.Use(middleware.RecoveryMiddleware)
+	r.Use(middleware.TimeoutMiddleware(10 * time.Second))
+
+	// ==================== Public routes ====================
 	r.Route("/auth", func(r chi.Router) {
 		r.Get("/login", authHandler.Login)
 		r.Get("/callback", authHandler.Callback)
 	})
 
+	// ==================== Protected routes ====================
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.NewAuthMiddleware(jwtManager, log).Handler)
 
@@ -135,17 +156,16 @@ func New() *App {
 			r.Post("/", wishlistHandler.Create)
 			r.Get("/", wishlistHandler.GetByUser)
 		})
+
 		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {
 			r.Post("/", wishlistHandler.AddItem)
 			r.Get("/", wishlistHandler.GetItems)
 		})
 
-		// ==================== ПРИГЛАШЕНИЯ ====================
 		r.Route("/invitations", func(r chi.Router) {
 			r.Post("/generate", invitationHandler.GenerateInvite)
 		})
 
-		// Присоединиться по ссылке (требует авторизацию)
 		r.Post("/invite/join", invitationHandler.JoinByInvite)
 	})
 

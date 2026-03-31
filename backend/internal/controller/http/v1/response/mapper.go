@@ -26,13 +26,14 @@ func EventToResponse(e *entity.Event) EventResponse {
 	}
 }
 
-func EventsToResponse(events []*entity.Event) []EventResponse {
+func EventsToResponse(events []entity.Event) []EventResponse {
 	if events == nil {
 		return nil
 	}
+
 	resp := make([]EventResponse, len(events))
-	for i, e := range events {
-		resp[i] = EventToResponse(e)
+	for i := range events {
+		resp[i] = EventToResponse(&events[i]) // ✅ FIX
 	}
 	return resp
 }
@@ -55,6 +56,7 @@ func UsersToResponse(users []*entity.User) []UserResponse {
 	if users == nil {
 		return nil
 	}
+
 	resp := make([]UserResponse, len(users))
 	for i, u := range users {
 		resp[i] = UserToResponse(u)
@@ -84,6 +86,7 @@ func ParticipantsToResponse(participants []*entity.Participant) []ParticipantRes
 	if participants == nil {
 		return nil
 	}
+
 	resp := make([]ParticipantResponse, len(participants))
 	for i, p := range participants {
 		resp[i] = ParticipantToResponse(p)
@@ -125,6 +128,7 @@ func WishlistItemsToResponse(items []*entity.WishlistItem) []WishlistItemRespons
 	if items == nil {
 		return nil
 	}
+
 	resp := make([]WishlistItemResponse, len(items))
 	for i, item := range items {
 		resp[i] = WishlistItemToResponse(item)
@@ -152,6 +156,7 @@ func AssignmentsToResponse(assignments []*entity.Assignment) []AssignmentRespons
 	if assignments == nil {
 		return nil
 	}
+
 	resp := make([]AssignmentResponse, len(assignments))
 	for i, a := range assignments {
 		resp[i] = AssignmentToResponse(a)

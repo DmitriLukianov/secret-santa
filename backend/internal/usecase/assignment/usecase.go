@@ -8,19 +8,18 @@ import (
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
-	"secret-santa-backend/internal/usecase"
 
 	"github.com/google/uuid"
 )
 
 type UseCase struct {
 	repo            Repository
-	participantRepo usecase.ParticipantRepository
-	eventRepo       usecase.EventUseCase
+	participantRepo ParticipantRepository
+	eventRepo       EventRepository
 	log             *slog.Logger
 }
 
-func New(repo Repository, participantRepo usecase.ParticipantRepository, eventRepo usecase.EventUseCase) *UseCase {
+func New(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository) *UseCase {
 	return &UseCase{
 		repo:            repo,
 		participantRepo: participantRepo,
@@ -28,7 +27,7 @@ func New(repo Repository, participantRepo usecase.ParticipantRepository, eventRe
 	}
 }
 
-func NewWithLogger(repo Repository, participantRepo usecase.ParticipantRepository, eventRepo usecase.EventUseCase, log *slog.Logger) *UseCase {
+func NewWithLogger(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository, log *slog.Logger) *UseCase {
 	return &UseCase{
 		repo:            repo,
 		participantRepo: participantRepo,
@@ -64,7 +63,7 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return definitions.ErrNotOrganizer
 	}
 
-	// 3. Проверяем статус события (новая проверка)
+	// 3. Проверяем статус события
 	if !eventPtr.IsDrawable() {
 		if uc.log != nil {
 			uc.log.Warn("draw not allowed due to status",
@@ -84,31 +83,15 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return definitions.ErrNotEnoughParticipants
 	}
 
-	// 5. Удаляем старую жеребьёвку
-	if err := uc.repo.DeleteByEvent(ctx, eventID); err != nil {
-		return fmt.Errorf("failed to delete old assignments: %w", err)
-	}
-
-	// 6. Генерируем новую жеребьёвку
+	// 5. Генерируем новую жеребьёвку (derangement)
 	assignments, err := uc.createDerangement(eventID, participants)
 	if err != nil {
 		return fmt.Errorf("failed to create derangement: %w", err)
 	}
 
-	// 7. Сохраняем новые пары
-	for _, a := range assignments {
-		if err := uc.repo.Create(ctx, a); err != nil {
-			return fmt.Errorf("failed to save assignment: %w", err)
-		}
-	}
-
-	// 8. Меняем статус события на "drawing_done"
-	if err := eventPtr.TransitionTo(entity.EventStatusDrawingDone); err != nil {
-		return err
-	}
-
-	if err := uc.eventRepo.UpdateStatus(ctx, eventID, eventPtr.Status); err != nil {
-		return fmt.Errorf("failed to update event status: %w", err)
+	// FIXED: вся жеребьёвка теперь в одной атомарной транзакции
+	if err := uc.repo.TransactionalDraw(ctx, eventID, assignments, entity.EventStatusDrawingDone); err != nil {
+		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
 
 	if uc.log != nil {
@@ -121,7 +104,7 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 	return nil
 }
 
-// createDerangement — алгоритм derangement (никто не дарит себе)
+// createDerangement — улучшенный алгоритм (никто не дарит себе)
 func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Participant) ([]entity.Assignment, error) {
 	n := len(participants)
 	ids := make([]uuid.UUID, n)
@@ -129,7 +112,9 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		ids[i] = p.UserID
 	}
 
-	for attempt := 0; attempt < 100; attempt++ {
+	maxAttempts := 200 // FIXED: увеличено для большей надёжности
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shuffled := make([]uuid.UUID, n)
 		copy(shuffled, ids)
 		rand.Shuffle(n, func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
@@ -150,10 +135,10 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		}
 	}
 
-	return nil, fmt.Errorf("failed to generate valid derangement after 100 attempts")
+	return nil, fmt.Errorf("failed to generate valid derangement after %d attempts", maxAttempts)
 }
 
-// GetByEvent — возвращает ТОЛЬКО свою пару
+// GetByEvent — возвращает ТОЛЬКО свою пару (без изменений)
 func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {
 	if eventID == uuid.Nil || userID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput

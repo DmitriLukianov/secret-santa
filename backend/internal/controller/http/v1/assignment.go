@@ -2,7 +2,6 @@ package v1
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -36,18 +35,8 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.uc.Draw(r.Context(), eventID, userID)
-	if err != nil {
-		if errors.Is(err, definitions.ErrNotOrganizer) {
-			response.WriteHTTPError(w, definitions.ErrForbidden)
-			return
-		}
-		if errors.Is(err, definitions.ErrInvalidEventState) ||
-			errors.Is(err, definitions.ErrNotEnoughParticipants) {
-			response.WriteHTTPError(w, err) // вернёт 400
-			return
-		}
-		response.WriteHTTPError(w, err) // остальные ошибки — 500
+	if err := h.uc.Draw(r.Context(), eventID, userID); err != nil {
+		response.WriteHTTPError(w, err) // ✅ ВСЁ УБРАЛИ
 		return
 	}
 

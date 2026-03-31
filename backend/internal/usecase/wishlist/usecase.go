@@ -6,26 +6,28 @@ import (
 	"log/slog"
 
 	"secret-santa-backend/internal/entity"
-	"secret-santa-backend/internal/usecase"
 
 	"github.com/google/uuid"
 )
 
 type UseCase struct {
-	repo         Repository
-	assignmentUC usecase.AssignmentUseCase // ← добавили
-	log          *slog.Logger
+	repo            Repository
+	participantRepo ParticipantRepository // FIXED
+	assignmentRepo  AssignmentRepository
+	log             *slog.Logger
 }
 
 func New(repo Repository) *UseCase {
 	return &UseCase{repo: repo}
 }
 
-func NewWithLogger(repo Repository, assignmentUC usecase.AssignmentUseCase, log *slog.Logger) *UseCase {
+// FIXED: обновили конструктор — добавили participantRepo
+func NewWithLogger(repo Repository, participantRepo ParticipantRepository, assignmentRepo AssignmentRepository, log *slog.Logger) *UseCase {
 	return &UseCase{
-		repo:         repo,
-		assignmentUC: assignmentUC,
-		log:          log,
+		repo:            repo,
+		participantRepo: participantRepo,
+		assignmentRepo:  assignmentRepo,
+		log:             log,
 	}
 }
 
@@ -115,7 +117,7 @@ func (uc *UseCase) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity
 	return uc.repo.GetItems(ctx, wishlistID)
 }
 
-// GetForUser — возвращает вишлист только если requester является Сантой этого участника
+// GetForUser — возвращает вишлист только если requester является Сантой
 func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error) {
 	if eventID == uuid.Nil || participantID == uuid.Nil || requesterID == uuid.Nil {
 		return nil, fmt.Errorf("eventID, participantID and requesterID are required")
@@ -134,15 +136,21 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		return nil, fmt.Errorf("wishlist not found: %w", err)
 	}
 
-	// Проверяем, является ли requester Сантой этого участника
-	assignments, err := uc.assignmentUC.GetByEvent(ctx, eventID, requesterID)
+	// FIXED: получаем участника, чтобы узнать его UserID (а не ParticipantID)
+	participant, err := uc.participantRepo.GetByID(ctx, participantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get participant: %w", err)
+	}
+
+	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check assignment: %w", err)
 	}
 
 	isSanta := false
 	for _, a := range assignments {
-		if a.ReceiverID == wishlist.ParticipantID {
+		// FIXED: сравниваем с participant.UserID, а не с wishlist.ParticipantID
+		if a.GiverID == requesterID && a.ReceiverID == participant.UserID {
 			isSanta = true
 			break
 		}

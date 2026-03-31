@@ -14,16 +14,17 @@ type ErrorResponse struct {
 	Code  int    `json:"code"`
 }
 
-// WriteHTTPError — главная функция обработки ошибок (экспортирована)
+// WriteHTTPError — централизованная обработка ошибок
 func WriteHTTPError(w http.ResponseWriter, err error) {
 	if err == nil {
 		return
 	}
 
 	status := http.StatusInternalServerError
-	message := err.Error()
+	message := "internal server error" // по умолчанию безопасное сообщение
 
 	switch {
+	// ==================== 404 ====================
 	case errors.Is(err, definitions.ErrNotFound),
 		errors.Is(err, definitions.ErrEventNotFound),
 		errors.Is(err, definitions.ErrWishlistNotFound),
@@ -31,19 +32,25 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		errors.Is(err, definitions.ErrAssignmentNotFound),
 		errors.Is(err, definitions.ErrUserNotFound):
 		status = http.StatusNotFound
+		message = err.Error()
 
+	// ==================== 403 ====================
 	case errors.Is(err, definitions.ErrForbidden),
 		errors.Is(err, definitions.ErrNotOrganizer),
 		errors.Is(err, definitions.ErrNotSanta),
 		errors.Is(err, definitions.ErrWishlistVisibilityForbidden):
 		status = http.StatusForbidden
+		message = err.Error()
 
+	// ==================== 409 ====================
 	case errors.Is(err, definitions.ErrConflict),
 		errors.Is(err, definitions.ErrAlreadyParticipating),
 		errors.Is(err, definitions.ErrDuplicateParticipant),
 		errors.Is(err, definitions.ErrEventAlreadyFinished):
 		status = http.StatusConflict
+		message = err.Error()
 
+	// ==================== 400 ====================
 	case errors.Is(err, definitions.ErrInvalidUUID),
 		errors.Is(err, definitions.ErrInvalidOAuthCode),
 		errors.Is(err, definitions.ErrMissingOAuthCode),
@@ -53,11 +60,12 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		errors.Is(err, definitions.ErrNotEnoughParticipants),
 		errors.Is(err, definitions.ErrInvalidWishlistVisibility):
 		status = http.StatusBadRequest
+		message = err.Error()
 
+	// ==================== fallback ====================
 	default:
-		// Для неизвестных ошибок не раскрываем детали
+		// логично НЕ отдавать внутренние ошибки клиенту
 		status = http.StatusInternalServerError
-		message = "internal server error"
 	}
 
 	writeJSONError(w, status, message)
@@ -66,8 +74,12 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(ErrorResponse{
+
+	if err := json.NewEncoder(w).Encode(ErrorResponse{
 		Error: message,
 		Code:  status,
-	})
+	}); err != nil {
+		// fallback — если даже encode упал
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
 }

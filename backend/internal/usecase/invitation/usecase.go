@@ -15,28 +15,40 @@ import (
 
 type UseCase struct {
 	repo          Repository
-	eventUC       usecase.EventUseCase
+	eventRepo     EventRepository
 	participantUC usecase.ParticipantUseCase
 	log           *slog.Logger
 }
 
-func New(repo Repository, eventUC usecase.EventUseCase, participantUC usecase.ParticipantUseCase) *UseCase {
-	return &UseCase{repo: repo, eventUC: eventUC, participantUC: participantUC}
+func New(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase) *UseCase {
+	return &UseCase{
+		repo:          repo,
+		eventRepo:     eventRepo,
+		participantUC: participantUC,
+	}
 }
 
-func NewWithLogger(repo Repository, eventUC usecase.EventUseCase, participantUC usecase.ParticipantUseCase, log *slog.Logger) *UseCase {
-	return &UseCase{repo: repo, eventUC: eventUC, participantUC: participantUC, log: log}
+func NewWithLogger(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase, log *slog.Logger) *UseCase {
+	return &UseCase{
+		repo:          repo,
+		eventRepo:     eventRepo,
+		participantUC: participantUC,
+		log:           log,
+	}
 }
 
 func (uc *UseCase) GenerateInvite(ctx context.Context, input dto.CreateInvitationInput, organizerID uuid.UUID) (dto.InvitationResponse, error) {
 	if uc.log != nil {
-		uc.log.Info("generate invitation started", slog.String("event_id", input.EventID.String()), slog.String("organizer_id", organizerID.String()))
+		uc.log.Info("generate invitation started",
+			slog.String("event_id", input.EventID.String()),
+			slog.String("organizer_id", organizerID.String()))
 	}
 
-	event, err := uc.eventUC.GetByID(ctx, input.EventID)
+	event, err := uc.eventRepo.GetByID(ctx, input.EventID)
 	if err != nil {
 		return dto.InvitationResponse{}, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
 	}
+
 	if event.OrganizerID != organizerID {
 		return dto.InvitationResponse{}, definitions.ErrNotOrganizer
 	}
@@ -70,22 +82,22 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 		return definitions.ErrNotFound
 	}
 
-	// 1. Проверяем, что ссылка ещё действительна по времени
+	// Проверка срока действия
 	if !inv.IsValid() {
 		return definitions.ErrInvalidEventState
 	}
 
-	// 2. Проверяем статус события — можно присоединяться только пока открыт набор
-	event, err := uc.eventUC.GetByID(ctx, inv.EventID)
+	// Проверка статуса события
+	event, err := uc.eventRepo.GetByID(ctx, inv.EventID)
 	if err != nil {
 		return err
 	}
 
 	if !event.CanAddParticipants() {
-		return definitions.ErrInvalidEventState // ссылка закрывается после начала жеребьёвки
+		return definitions.ErrInvalidEventState
 	}
 
-	// 3. Добавляем участника
+	// Добавляем участника через usecase (ВАЖНО)
 	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, entity.ParticipantRoleParticipant)
 	if err != nil {
 		return err
