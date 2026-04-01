@@ -2,12 +2,11 @@ package event
 
 import (
 	"context"
-	"strconv"
-	"strings"
 
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -20,44 +19,54 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
+// Create
 func (r *Repository) Create(ctx context.Context, e entity.Event) error {
-	query := `
-		INSERT INTO events (
-			id, title, description, rules, recommendations, organizer_id,
-			start_date, draw_date, end_date, status, max_participants,
-			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-	`
+	query, args, err := createEventQuery().
+		Values(
+			e.ID,
+			e.Title,
+			e.Description,
+			e.Rules,
+			e.Recommendations,
+			e.OrganizerID,
+			e.StartDate,
+			e.DrawDate,
+			e.EndDate,
+			e.Status,
+			e.MaxParticipants,
+			e.CreatedAt,
+			e.UpdatedAt,
+		).
+		ToSql()
+	if err != nil {
+		return err
+	}
 
-	_, err := r.db.Exec(ctx, query,
-		e.ID, e.Title, e.Description, e.Rules, e.Recommendations,
-		e.OrganizerID, e.StartDate, e.DrawDate, e.EndDate,
-		e.Status, e.MaxParticipants, e.CreatedAt, e.UpdatedAt,
-	)
+	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
+// GetByID
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
-	query := `
-		SELECT id, title, description, rules, recommendations, organizer_id,
-		       start_date, draw_date, end_date, status, max_participants,
-		       created_at, updated_at
-		FROM events WHERE id = $1
-	`
+	query, args, err := getEventQuery().
+		Where("id = ?", id).
+		ToSql()
+	if err != nil {
+		return nil, err
+	}
 
-	row := r.db.QueryRow(ctx, query, id)
+	row := r.db.QueryRow(ctx, query, args...)
 	return ScanEvent(row)
 }
 
+// GetAll
 func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
-	query := `
-		SELECT id, title, description, rules, recommendations, organizer_id,
-		       start_date, draw_date, end_date, status, max_participants,
-		       created_at, updated_at
-		FROM events
-	`
+	query, args, err := listEventsQuery().ToSql()
+	if err != nil {
+		return nil, err
+	}
 
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -66,92 +75,85 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	return ScanEvents(rows)
 }
 
+// Update
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
-	query := "UPDATE events SET updated_at = NOW(), "
-	args := []interface{}{}
-	argID := 1
+	q := updateEventQuery().Set("updated_at", "NOW()")
 
 	if input.Title != nil {
-		query += "title = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.Title)
-		argID++
+		q = q.Set("title", *input.Title)
 	}
 	if input.Description != nil {
-		query += "description = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.Description)
-		argID++
+		q = q.Set("description", *input.Description)
 	}
 	if input.Rules != nil {
-		query += "rules = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.Rules)
-		argID++
+		q = q.Set("rules", *input.Rules)
 	}
 	if input.Recommendations != nil {
-		query += "recommendations = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.Recommendations)
-		argID++
+		q = q.Set("recommendations", *input.Recommendations)
 	}
 	if input.StartDate != nil {
-		query += "start_date = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.StartDate)
-		argID++
+		q = q.Set("start_date", *input.StartDate)
 	}
 	if input.DrawDate != nil {
-		query += "draw_date = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.DrawDate)
-		argID++
+		q = q.Set("draw_date", *input.DrawDate)
 	}
 	if input.EndDate != nil {
-		query += "end_date = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.EndDate)
-		argID++
+		q = q.Set("end_date", *input.EndDate)
 	}
 	if input.MaxParticipants != nil {
-		query += "max_participants = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.MaxParticipants)
-		argID++
+		q = q.Set("max_participants", *input.MaxParticipants)
 	}
 
-	if len(args) == 0 {
-		return nil
+	query, args, err := q.Where("id = ?", id).ToSql()
+	if err != nil {
+		return err
 	}
 
-	query = strings.TrimSuffix(query, ", ")
-	query += " WHERE id = $" + strconv.Itoa(argID)
-	args = append(args, id)
-
-	_, err := r.db.Exec(ctx, query, args...)
+	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
+// UpdateStatus
 func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
-	query := `
-		UPDATE events 
-		SET status = $1, updated_at = NOW() 
-		WHERE id = $2
-	`
-	_, err := r.db.Exec(ctx, query, status, id)
+	query, args, err := updateEventQuery().
+		Set("status", status).
+		Set("updated_at", "NOW()").
+		Where("id = ?", id).
+		ToSql()
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
+// Delete
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM events WHERE id = $1`, id)
+	query, args, err := deleteEventQuery().
+		Where("id = ?", id).
+		ToSql()
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
+// GetEventsForUser — теперь тоже через queries.go
 func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
-	query := `
-		SELECT DISTINCT e.id, e.title, e.description, e.rules, e.recommendations, 
-		       e.organizer_id, e.start_date, e.draw_date, e.end_date, 
-		       e.status, e.max_participants, e.created_at, e.updated_at
-		FROM events e
-		LEFT JOIN participants p ON e.id = p.event_id
-		WHERE e.organizer_id = $1 
-		   OR p.user_id = $1
-		ORDER BY e.created_at DESC
-	`
+	query, args, err := getEventsForUserQuery().
+		Where(squirrel.Or{
+			squirrel.Eq{"events.organizer_id": userID},
+			squirrel.Eq{"p.user_id": userID},
+		}).
+		ToSql()
+	if err != nil {
+		return nil, err
+	}
 
-	rows, err := r.db.Query(ctx, query, userID)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

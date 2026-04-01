@@ -25,3 +25,12 @@ func getWishlistItemsQuery(wishlistID string) squirrel.SelectBuilder {
 		From("wishlist_items").
 		Where(squirrel.Eq{"wishlist_id": wishlistID})
 }
+func updateWishlistItemQuery(itemID string) squirrel.UpdateBuilder {
+	return qb.Update("wishlist_items").
+		Where(squirrel.Eq{"id": itemID})
+}
+
+func deleteWishlistItemQuery(itemID string) squirrel.DeleteBuilder {
+	return qb.Delete("wishlist_items").
+		Where(squirrel.Eq{"id": itemID})
+}

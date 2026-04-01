@@ -62,7 +62,7 @@ func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(resp)
 }
 
-// JoinByInvite — публичный
+// JoinByInvite — публичный эндпоинт (роут без AuthMiddleware)
 func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request) {
 	var req request.JoinByInvitationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -70,9 +70,10 @@ func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Получаем userID из токена
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		response.WriteHTTPError(w, err)
+		response.WriteHTTPError(w, definitions.ErrUnauthorized)
 		return
 	}
 
@@ -88,5 +89,7 @@ func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Вы успешно присоединились к событию"})
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Вы успешно присоединились к событию",
+	})
 }

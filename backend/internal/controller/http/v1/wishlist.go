@@ -190,3 +190,47 @@ func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
+// UpdateItem — обновление товара
+// UpdateItem — обновление товара
+func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	var req request.UpdateWishlistItemRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	item, err := h.uc.UpdateItem(r.Context(), itemID, req.Title, &req.Link, &req.ImageURL, &req.Comment)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.WishlistItemToResponse(&item))
+}
+
+// DeleteItem — удаление товара (исправлена неиспользуемая переменная)
+// DeleteItem — удаление товара
+func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	if err := h.uc.DeleteItem(r.Context(), itemID); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

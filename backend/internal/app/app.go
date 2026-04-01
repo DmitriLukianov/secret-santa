@@ -15,6 +15,7 @@ import (
 
 	postgres "secret-santa-backend/internal/repository/postgres"
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
+	chatrepo "secret-santa-backend/internal/repository/postgres/chat" // ← добавлено
 	eventrepo "secret-santa-backend/internal/repository/postgres/event"
 	invitationrepo "secret-santa-backend/internal/repository/postgres/invitation"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
@@ -23,6 +24,7 @@ import (
 
 	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
 	authusecase "secret-santa-backend/internal/usecase/auth"
+	chatusecase "secret-santa-backend/internal/usecase/chat" // ← добавлено
 	eventusecase "secret-santa-backend/internal/usecase/event"
 	invitationusecase "secret-santa-backend/internal/usecase/invitation"
 	participantusecase "secret-santa-backend/internal/usecase/participant"
@@ -49,19 +51,16 @@ func New() *App {
 		panic(err)
 	}
 
-	// ==================== Репозитории ====================
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
 	participantRepo := participantrepo.New(db)
 	assignmentRepo := assignmentrepo.New(db)
 	wishlistRepo := wishlistrepo.New(db)
 	invitationRepo := invitationrepo.New(db)
-
-	// ==================== UseCases ====================
+	chatRepo := chatrepo.New(db)
 	userUC := userusecase.NewWithLogger(userRepo, log)
 	authUC := authusecase.NewWithLogger(userUC, log)
 
-	// 🔥 ИСПРАВЛЕНО: теперь передаём participantRepo
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
 
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
@@ -82,15 +81,16 @@ func New() *App {
 		log,
 	)
 
-	// ==================== Handlers ====================
+	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log) // ← добавлено
+
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	invitationHandler := v1.NewInvitationHandler(invitationUC)
+	chatHandler := v1.NewChatHandler(chatUC) // ← добавлено
 
-	// ==================== Auth ====================
 	jwtManager, err := oauth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
 	if err != nil {
 		log.Error("failed to create JWT manager", slog.String("error", err.Error()))
@@ -105,7 +105,6 @@ func New() *App {
 
 	authHandler := v1.NewAuthHandler(authProvider, jwtManager, authUC)
 
-	// ==================== Router ====================
 	r := chi.NewRouter()
 
 	r.Use(middleware.RecoveryMiddleware)
@@ -145,6 +144,13 @@ func New() *App {
 			r.Get("/{eventId}/participants", participantHandler.GetByEvent)
 			r.Post("/{eventId}/assign", assignmentHandler.Draw)
 			r.Get("/{eventId}/assignments", assignmentHandler.GetByEvent)
+
+			// ====================== ЧАТ ======================
+			r.Route("/{eventId}/chat", func(r chi.Router) {
+				r.Get("/recipient", chatHandler.GetRecipientChat) // Кому я Санта
+				r.Get("/sender", chatHandler.GetSenderChat)       // Кто мой Санта
+				r.Post("/messages", chatHandler.SendMessage)      // Отправить сообщение
+			})
 		})
 
 		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
@@ -162,12 +168,13 @@ func New() *App {
 		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {
 			r.Post("/", wishlistHandler.AddItem)
 			r.Get("/", wishlistHandler.GetItems)
+			r.Put("/{itemId}", wishlistHandler.UpdateItem)
+			r.Delete("/{itemId}", wishlistHandler.DeleteItem)
 		})
 
 		r.Route("/invitations", func(r chi.Router) {
 			r.Post("/generate", invitationHandler.GenerateInvite)
 		})
-
 		r.Post("/invite/join", invitationHandler.JoinByInvite)
 	})
 

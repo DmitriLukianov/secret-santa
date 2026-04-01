@@ -224,4 +224,20 @@ COMMENT ON COLUMN invitations.updated_at IS 'Дата последнего об�
 CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
 CREATE INDEX IF NOT EXISTS idx_invitations_event ON invitations(event_id);
 
+CREATE TABLE IF NOT EXISTS messages (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    sender_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Индексы для быстрого поиска чата по паре
+CREATE INDEX IF NOT EXISTS idx_messages_event_pair 
+    ON messages(event_id, sender_id, receiver_id);
+
+CREATE INDEX IF NOT EXISTS idx_messages_created_at 
+    ON messages(created_at);
+    
 -- +goose StatementEnd

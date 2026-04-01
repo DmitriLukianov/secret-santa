@@ -53,12 +53,14 @@ internal/
     http/
       v1/
         request/
+          chat.go
           event.go
           invitation.go
           user.go
           wishlist.go
         response/
           assignment.go
+          chat.go
           error.go
           event.go
           mapper.go
@@ -67,6 +69,7 @@ internal/
           wishlist.go
         assignment.go
         auth.go
+        chat.go
         event.go
         invitation.go
         participant.go
@@ -85,6 +88,7 @@ internal/
     assignment.go
     event.go
     invitation.go
+    message.go
     participant.go
     user.go
     wishlist.go
@@ -101,6 +105,10 @@ internal/
   repository/
     postgres/
       assignment/
+        mapper.go
+        queries.go
+        repo.go
+      chat/
         mapper.go
         queries.go
         repo.go
@@ -128,6 +136,8 @@ internal/
       interfaces.go
       usecase.go
     auth/
+      usecase.go
+    chat/
       usecase.go
     event/
       interfaces.go
@@ -194,6 +204,7 @@ import (
 
 	postgres "secret-santa-backend/internal/repository/postgres"
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
+	chatrepo "secret-santa-backend/internal/repository/postgres/chat" // ← добавлено
 	eventrepo "secret-santa-backend/internal/repository/postgres/event"
 	invitationrepo "secret-santa-backend/internal/repository/postgres/invitation"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
@@ -202,6 +213,7 @@ import (
 
 	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
 	authusecase "secret-santa-backend/internal/usecase/auth"
+	chatusecase "secret-santa-backend/internal/usecase/chat" // ← добавлено
 	eventusecase "secret-santa-backend/internal/usecase/event"
 	invitationusecase "secret-santa-backend/internal/usecase/invitation"
 	participantusecase "secret-santa-backend/internal/usecase/participant"
@@ -228,19 +240,17 @@ func New() *App {
 		panic(err)
 	}
 
-	// ==================== Репозитории ====================
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
 	participantRepo := participantrepo.New(db)
 	assignmentRepo := assignmentrepo.New(db)
 	wishlistRepo := wishlistrepo.New(db)
 	invitationRepo := invitationrepo.New(db)
+	chatRepo := chatrepo.New(db) // ← добавлено
 
-	// ==================== UseCases ====================
 	userUC := userusecase.NewWithLogger(userRepo, log)
 	authUC := authusecase.NewWithLogger(userUC, log)
 
-	// 🔥 ИСПРАВЛЕНО: теперь передаём participantRepo
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
 
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
@@ -261,15 +271,16 @@ func New() *App {
 		log,
 	)
 
-	// ==================== Handlers ====================
+	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log) // ← добавлено
+
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	invitationHandler := v1.NewInvitationHandler(invitationUC)
+	chatHandler := v1.NewChatHandler(chatUC) // ← добавлено
 
-	// ==================== Auth ====================
 	jwtManager, err := oauth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
 	if err != nil {
 		log.Error("failed to create JWT manager", slog.String("error", err.Error()))
@@ -284,7 +295,6 @@ func New() *App {
 
 	authHandler := v1.NewAuthHandler(authProvider, jwtManager, authUC)
 
-	// ==================== Router ====================
 	r := chi.NewRouter()
 
 	r.Use(middleware.RecoveryMiddleware)
@@ -324,6 +334,13 @@ func New() *App {
 			r.Get("/{eventId}/participants", participantHandler.GetByEvent)
 			r.Post("/{eventId}/assign", assignmentHandler.Draw)
 			r.Get("/{eventId}/assignments", assignmentHandler.GetByEvent)
+
+			// ====================== ЧАТ ======================
+			r.Route("/{eventId}/chat", func(r chi.Router) {
+				r.Get("/recipient", chatHandler.GetRecipientChat) // Кому я Санта
+				r.Get("/sender", chatHandler.GetSenderChat)       // Кто мой Санта
+				r.Post("/messages", chatHandler.SendMessage)      // Отправить сообщение
+			})
 		})
 
 		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
@@ -341,12 +358,13 @@ func New() *App {
 		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {
 			r.Post("/", wishlistHandler.AddItem)
 			r.Get("/", wishlistHandler.GetItems)
+			r.Put("/{itemId}", wishlistHandler.UpdateItem)
+			r.Delete("/{itemId}", wishlistHandler.DeleteItem)
 		})
 
 		r.Route("/invitations", func(r chi.Router) {
 			r.Post("/generate", invitationHandler.GenerateInvite)
 		})
-
 		r.Post("/invite/join", invitationHandler.JoinByInvite)
 	})
 
@@ -378,19 +396,15 @@ import (
 )
 
 type Config struct {
-	// Приложение
 	AppPort  string `env:"APP_PORT" envDefault:"8080"`
 	AppEnv   string `env:"APP_ENV" envDefault:"local"`
 	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
 
-	// База данных
 	DatabaseURL string `env:"DATABASE_URL"`
 
-	// JWT
 	JWTSecret string        `env:"JWT_SECRET"`
 	JWTTTL    time.Duration `env:"JWT_TTL" envDefault:"24h"`
 
-	// OAuth (поддержка нескольких провайдеров)
 	OAuthProvider      string `env:"OAUTH_PROVIDER" envDefault:"github"`
 	GithubClientID     string `env:"GITHUB_CLIENT_ID"`
 	GithubClientSecret string `env:"GITHUB_CLIENT_SECRET"`
@@ -415,7 +429,6 @@ func Load() *Config {
 		GithubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", ""),
 	}
 
-	// Простая валидация обязательных полей
 	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
@@ -443,6 +456,14 @@ func parseDuration(s string) time.Duration {
 		return 24 * time.Hour
 	}
 	return d
+}
+</file>
+
+<file path="internal/controller/http/v1/request/chat.go">
+package request
+
+type SendMessageRequest struct {
+	Content string `json:"content" validate:"required"`
 }
 </file>
 
@@ -485,7 +506,7 @@ import "github.com/google/uuid"
 
 type CreateInvitationRequest struct {
 	EventID   uuid.UUID `json:"eventId" validate:"required"`
-	ExpiresIn string    `json:"expiresIn,omitempty"` // ← теперь string
+	ExpiresIn string    `json:"expiresIn,omitempty"`
 }
 
 type JoinByInvitationRequest struct {
@@ -523,6 +544,14 @@ type CreateWishlistItemRequest struct {
 	ImageURL string `json:"imageURL,omitempty"`
 	Comment  string `json:"comment,omitempty"`
 }
+
+// NEW: запрос на обновление товара (все поля кроме title — опциональные)
+type UpdateWishlistItemRequest struct {
+	Title    string `json:"title" validate:"required"`
+	Link     string `json:"link,omitempty"`
+	ImageURL string `json:"imageURL,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+}
 </file>
 
 <file path="internal/controller/http/v1/response/assignment.go">
@@ -536,6 +565,39 @@ type AssignmentResponse struct {
 	GiverID    string    `json:"giverId"`
 	ReceiverID string    `json:"receiverId"`
 	CreatedAt  time.Time `json:"createdAt"`
+}
+</file>
+
+<file path="internal/controller/http/v1/response/chat.go">
+package response
+
+import (
+	"secret-santa-backend/internal/entity"
+	"time"
+)
+
+type MessageResponse struct {
+	ID        string    `json:"id"`
+	SenderID  string    `json:"sender_id"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func MessageToResponse(m *entity.Message) MessageResponse {
+	return MessageResponse{
+		ID:        m.ID.String(),
+		SenderID:  m.SenderID.String(),
+		Content:   m.Content,
+		CreatedAt: m.CreatedAt,
+	}
+}
+
+func MessagesToResponse(messages []entity.Message) []MessageResponse {
+	resp := make([]MessageResponse, len(messages))
+	for i, m := range messages {
+		resp[i] = MessageToResponse(&m)
+	}
+	return resp
 }
 </file>
 
@@ -1048,6 +1110,114 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 }
 </file>
 
+<file path="internal/controller/http/v1/chat.go">
+package v1
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"secret-santa-backend/internal/controller/http/v1/request"
+	"secret-santa-backend/internal/controller/http/v1/response"
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/usecase"
+)
+
+type ChatHandler struct {
+	uc usecase.ChatUseCase
+}
+
+func NewChatHandler(uc usecase.ChatUseCase) *ChatHandler {
+	return &ChatHandler{uc: uc}
+}
+
+// GetRecipientChat — чат «Кому я Санта»
+func (h *ChatHandler) GetRecipientChat(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	messages, err := h.uc.GetRecipientChat(r.Context(), eventID, userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.MessagesToResponse(messages))
+}
+
+// GetSenderChat — чат «Кто мой Санта»
+func (h *ChatHandler) GetSenderChat(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	messages, err := h.uc.GetSenderChat(r.Context(), eventID, userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.MessagesToResponse(messages))
+}
+
+// SendMessage — отправить сообщение
+func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
+	userID, err := middleware.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	var req request.SendMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	msg, err := h.uc.SendMessage(r.Context(), eventID, userID, req.Content)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response.MessageToResponse(&msg))
+}
+</file>
+
 <file path="internal/controller/http/v1/event.go">
 package v1
 
@@ -1306,7 +1476,7 @@ func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(resp)
 }
 
-// JoinByInvite — публичный
+// JoinByInvite — публичный эндпоинт (роут без AuthMiddleware)
 func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request) {
 	var req request.JoinByInvitationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1314,9 +1484,10 @@ func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Получаем userID из токена
 	userID, err := middleware.GetUserID(r)
 	if err != nil {
-		response.WriteHTTPError(w, err)
+		response.WriteHTTPError(w, definitions.ErrUnauthorized)
 		return
 	}
 
@@ -1332,7 +1503,9 @@ func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Вы успешно присоединились к событию"})
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Вы успешно присоединились к событию",
+	})
 }
 </file>
 
@@ -1834,6 +2007,50 @@ func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
+// UpdateItem — обновление товара
+// UpdateItem — обновление товара
+func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	var req request.UpdateWishlistItemRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	item, err := h.uc.UpdateItem(r.Context(), itemID, req.Title, &req.Link, &req.ImageURL, &req.Comment)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.WishlistItemToResponse(&item))
+}
+
+// DeleteItem — удаление товара (исправлена неиспользуемая переменная)
+// DeleteItem — удаление товара
+func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "itemId")
+	itemID, err := uuid.Parse(itemIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	if err := h.uc.DeleteItem(r.Context(), itemID); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
 </file>
 
 <file path="internal/definitions/errors.go">
@@ -2197,6 +2414,36 @@ func NewInvitation(eventID, createdBy uuid.UUID, expiresIn time.Duration) Invita
 // IsValid — теперь только проверка по времени (многоразовая ссылка)
 func (i Invitation) IsValid() bool {
 	return time.Now().Before(i.ExpiresAt)
+}
+</file>
+
+<file path="internal/entity/message.go">
+package entity
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type Message struct {
+	ID         uuid.UUID `db:"id"`
+	EventID    uuid.UUID `db:"event_id"`
+	SenderID   uuid.UUID `db:"sender_id"`
+	ReceiverID uuid.UUID `db:"receiver_id"`
+	Content    string    `db:"content"`
+	CreatedAt  time.Time `db:"created_at"`
+}
+
+func NewMessage(eventID, senderID, receiverID uuid.UUID, content string) Message {
+	return Message{
+		ID:         uuid.New(),
+		EventID:    eventID,
+		SenderID:   senderID,
+		ReceiverID: receiverID,
+		Content:    content,
+		CreatedAt:  time.Now(),
+	}
 }
 </file>
 
@@ -2908,6 +3155,133 @@ func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID
 		WHERE id = $2`,
 		status, eventID)
 	return err
+}
+</file>
+
+<file path="internal/repository/postgres/chat/mapper.go">
+package chat
+
+import (
+	"secret-santa-backend/internal/entity"
+
+	"github.com/jackc/pgx/v5"
+)
+
+func scanMessage(row pgx.Row) (*entity.Message, error) {
+	var m entity.Message
+	err := row.Scan(
+		&m.ID,
+		&m.EventID,
+		&m.SenderID,
+		&m.ReceiverID,
+		&m.Content,
+		&m.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func scanMessages(rows pgx.Rows) ([]entity.Message, error) {
+	var messages []entity.Message
+	for rows.Next() {
+		var m entity.Message
+		err := rows.Scan(
+			&m.ID,
+			&m.EventID,
+			&m.SenderID,
+			&m.ReceiverID,
+			&m.Content,
+			&m.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, m)
+	}
+	return messages, nil
+}
+</file>
+
+<file path="internal/repository/postgres/chat/queries.go">
+package chat
+
+import "github.com/Masterminds/squirrel"
+
+var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+func createMessageQuery() squirrel.InsertBuilder {
+	return qb.Insert("messages").
+		Columns("id", "event_id", "sender_id", "receiver_id", "content", "created_at")
+}
+
+func getMessagesByPairQuery(eventID, user1ID, user2ID string) squirrel.SelectBuilder {
+	return qb.Select("id", "event_id", "sender_id", "receiver_id", "content", "created_at").
+		From("messages").
+		Where(squirrel.Eq{"event_id": eventID}).
+		Where(
+			squirrel.Or{
+				squirrel.And{
+					squirrel.Eq{"sender_id": user1ID},
+					squirrel.Eq{"receiver_id": user2ID},
+				},
+				squirrel.And{
+					squirrel.Eq{"sender_id": user2ID},
+					squirrel.Eq{"receiver_id": user1ID},
+				},
+			},
+		).
+		OrderBy("created_at ASC")
+}
+</file>
+
+<file path="internal/repository/postgres/chat/repo.go">
+package chat
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Repository struct {
+	db *pgxpool.Pool
+}
+
+func New(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
+}
+
+func (r *Repository) CreateMessage(ctx context.Context, msg entity.Message) error {
+	query := createMessageQuery().
+		Values(msg.ID, msg.EventID, msg.SenderID, msg.ReceiverID, msg.Content, msg.CreatedAt)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error) {
+	query := getMessagesByPairQuery(eventID.String(), user1ID.String(), user2ID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanMessages(rows)
 }
 </file>
 
@@ -3706,6 +4080,15 @@ func getWishlistItemsQuery(wishlistID string) squirrel.SelectBuilder {
 		From("wishlist_items").
 		Where(squirrel.Eq{"wishlist_id": wishlistID})
 }
+func updateWishlistItemQuery(itemID string) squirrel.UpdateBuilder {
+	return qb.Update("wishlist_items").
+		Where(squirrel.Eq{"id": itemID})
+}
+
+func deleteWishlistItemQuery(itemID string) squirrel.DeleteBuilder {
+	return qb.Delete("wishlist_items").
+		Where(squirrel.Eq{"id": itemID})
+}
 </file>
 
 <file path="internal/repository/postgres/wishlist/repo.go">
@@ -3714,6 +4097,7 @@ package wishlist
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
@@ -3783,6 +4167,32 @@ func (r *Repository) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]enti
 	defer rows.Close()
 
 	return scanWishlistItems(rows)
+}
+func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) error {
+	query := updateWishlistItemQuery(itemID.String()).
+		Set("title", title).
+		Set("link", link).
+		Set("image_url", imageURL).
+		Set("comment", comment).
+		Set("created_at", time.Now()) // или updated_at, если добавишь поле
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+// NEW: удаление товара
+func (r *Repository) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
+	query := deleteWishlistItemQuery(itemID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
 }
 </file>
 
@@ -4034,7 +4444,6 @@ func NewWithLogger(userUC usecase.UserUseCase, log *slog.Logger) *UseCase {
 	return &UseCase{userUC: userUC, log: log}
 }
 
-// LoginWithOAuth — основная логика OAuth (чисто по boilerplate)
 func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error) {
 	if uc.log != nil {
 		uc.log.Info("oauth login started",
@@ -4047,7 +4456,6 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", definitions.ErrMissingOAuthCode
 	}
 
-	// 1. Ищем существующего пользователя
 	user, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
 	if err == nil && user != nil {
 		if uc.log != nil {
@@ -4060,7 +4468,6 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", fmt.Errorf("failed to lookup oauth user: %w", err)
 	}
 
-	// 2. Создаём нового пользователя
 	createInput := dto.CreateUserInput{
 		Name:          info.Name,
 		Email:         info.Email,
@@ -4072,7 +4479,6 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// 3. Получаем реальный пользователь из БД (гарантируем правильный ID)
 	savedUser, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
 	if err != nil {
 		return "", fmt.Errorf("failed to get saved user after creation: %w", err)
@@ -4083,6 +4489,147 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 	}
 
 	return savedUser.ID.String(), nil
+}
+</file>
+
+<file path="internal/usecase/chat/usecase.go">
+package chat
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/entity"
+	"secret-santa-backend/internal/usecase" // ← ОБЯЗАТЕЛЬНЫЙ ИМПОРТ
+
+	"github.com/google/uuid"
+)
+
+type UseCase struct {
+	repo            usecase.ChatRepository
+	participantRepo usecase.ParticipantRepository
+	assignmentRepo  usecase.AssignmentRepository
+	log             *slog.Logger
+}
+
+func New(repo usecase.ChatRepository, participantRepo usecase.ParticipantRepository, assignmentRepo usecase.AssignmentRepository) *UseCase {
+	return &UseCase{
+		repo:            repo,
+		participantRepo: participantRepo,
+		assignmentRepo:  assignmentRepo,
+	}
+}
+
+func NewWithLogger(repo usecase.ChatRepository, participantRepo usecase.ParticipantRepository, assignmentRepo usecase.AssignmentRepository, log *slog.Logger) *UseCase {
+	uc := New(repo, participantRepo, assignmentRepo)
+	uc.log = log
+	return uc
+}
+
+// GetRecipientChat — чат «Кому я Санта» (я — giver)
+func (uc *UseCase) GetRecipientChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error) {
+	if uc.log != nil {
+		uc.log.Info("get recipient chat started",
+			slog.String("event_id", eventID.String()),
+			slog.String("user_id", userID.String()),
+		)
+	}
+
+	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get assignments: %w", err)
+	}
+
+	var receiverID uuid.UUID
+	for _, a := range assignments {
+		if a.GiverID == userID {
+			receiverID = a.ReceiverID
+			break
+		}
+	}
+	if receiverID == uuid.Nil {
+		return nil, definitions.ErrNotSanta
+	}
+
+	return uc.repo.GetMessagesByPair(ctx, eventID, userID, receiverID)
+}
+
+// GetSenderChat — чат «Кто мой Санта» (я — receiver)
+func (uc *UseCase) GetSenderChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error) {
+	if uc.log != nil {
+		uc.log.Info("get sender chat started",
+			slog.String("event_id", eventID.String()),
+			slog.String("user_id", userID.String()),
+		)
+	}
+
+	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get assignments: %w", err)
+	}
+
+	var senderID uuid.UUID
+	for _, a := range assignments {
+		if a.ReceiverID == userID {
+			senderID = a.GiverID
+			break
+		}
+	}
+	if senderID == uuid.Nil {
+		return nil, definitions.ErrNotSanta
+	}
+
+	return uc.repo.GetMessagesByPair(ctx, eventID, senderID, userID)
+}
+
+// SendMessage — отправить сообщение (автоматически определяет пару)
+func (uc *UseCase) SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error) {
+	if content == "" {
+		return entity.Message{}, definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("send message started",
+			slog.String("event_id", eventID.String()),
+			slog.String("user_id", userID.String()),
+		)
+	}
+
+	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("failed to get assignments: %w", err)
+	}
+
+	var receiverID uuid.UUID
+	for _, a := range assignments {
+		if a.GiverID == userID {
+			receiverID = a.ReceiverID
+			break
+		}
+		if a.ReceiverID == userID {
+			receiverID = a.GiverID
+			break
+		}
+	}
+	if receiverID == uuid.Nil {
+		return entity.Message{}, definitions.ErrNotSanta
+	}
+
+	msg := entity.NewMessage(eventID, userID, receiverID, content)
+
+	if err := uc.repo.CreateMessage(ctx, msg); err != nil {
+		return entity.Message{}, fmt.Errorf("failed to create message: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("message sent successfully",
+			slog.String("message_id", msg.ID.String()),
+		)
+	}
+
+	return msg, nil
 }
 </file>
 
@@ -4556,7 +5103,6 @@ func NewWithLogger(repo Repository, log *slog.Logger) *UseCase {
 	return &UseCase{repo: repo, log: log}
 }
 
-// Create — добавляет участника в событие
 func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error) {
 	if uc.log != nil {
 		uc.log.Info("create participant started",
@@ -4610,7 +5156,6 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.
 	return uc.repo.GetByEvent(ctx, eventID)
 }
 
-// MarkGiftSent — отметка, что участник отправил подарок
 func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID uuid.UUID) error {
 	if participantID == uuid.Nil {
 		return fmt.Errorf("participant id is required")
@@ -4655,8 +5200,6 @@ func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// GetByUserAndEvent — автоматически находит участника по user_id + event_id
-// (чтобы не нужно было вручную передавать participant_id)
 func (u *UseCase) GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error) {
 	if u.log != nil {
 		u.log.Info("get participant by user and event started",
@@ -4875,6 +5418,8 @@ type Repository interface {
 	CreateItem(ctx context.Context, item entity.WishlistItem) error
 	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
+	UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) error
+	DeleteItem(ctx context.Context, itemID uuid.UUID) error
 }
 
 // FIXED: добавили ParticipantRepository, чтобы получить UserID участника
@@ -5099,6 +5644,50 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 
 	return wishlist, nil
 }
+
+// NEW: обновление товара
+func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
+	if uc.log != nil {
+		uc.log.Info("update wishlist item started",
+			slog.String("item_id", itemID.String()),
+			slog.String("title", title),
+		)
+	}
+
+	// Сначала получаем текущий item, чтобы вернуть обновлённый
+	item := entity.WishlistItem{ID: itemID, Title: title, Link: link, ImageURL: imageURL, Comment: comment}
+
+	if err := uc.repo.UpdateItem(ctx, itemID, title, link, imageURL, comment); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to update wishlist item", slog.String("error", err.Error()))
+		}
+		return entity.WishlistItem{}, fmt.Errorf("failed to update item: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("wishlist item updated successfully", slog.String("item_id", itemID.String()))
+	}
+	return item, nil
+}
+
+// NEW: удаление товара
+func (uc *UseCase) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
+	if uc.log != nil {
+		uc.log.Info("delete wishlist item started", slog.String("item_id", itemID.String()))
+	}
+
+	if err := uc.repo.DeleteItem(ctx, itemID); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to delete wishlist item", slog.String("error", err.Error()))
+		}
+		return fmt.Errorf("failed to delete item: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("wishlist item deleted successfully", slog.String("item_id", itemID.String()))
+	}
+	return nil
+}
 </file>
 
 <file path="internal/usecase/contracts.go">
@@ -5113,7 +5702,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// UserUseCase — публичный интерфейс
 type UserUseCase interface {
 	Create(ctx context.Context, input dto.CreateUserInput) (entity.User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
@@ -5123,7 +5711,6 @@ type UserUseCase interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
-// EventUseCase — полный интерфейс событий (обновлённый)
 type EventUseCase interface {
 	Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
@@ -5132,7 +5719,6 @@ type EventUseCase interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error
 	Delete(ctx context.Context, id uuid.UUID) error
 
-	// === Работа со статусами ===
 	OpenInvitation(ctx context.Context, id, userID uuid.UUID) error
 	CloseRegistration(ctx context.Context, id, userID uuid.UUID) error
 	StartDrawing(ctx context.Context, id, userID uuid.UUID) error
@@ -5142,7 +5728,6 @@ type EventUseCase interface {
 	GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
 }
 
-// ParticipantUseCase
 type ParticipantUseCase interface {
 	Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
@@ -5152,30 +5737,50 @@ type ParticipantUseCase interface {
 	GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error)
 }
 
-// WishlistUseCase
 type WishlistUseCase interface {
 	Create(ctx context.Context, participantID uuid.UUID, visibility string) (entity.Wishlist, error)
 	AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error)
 	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
 	GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error)
+	UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error)
+	DeleteItem(ctx context.Context, itemID uuid.UUID) error
 }
 
-// AssignmentUseCase
 type AssignmentUseCase interface {
 	Draw(ctx context.Context, eventID, userID uuid.UUID) error
 	GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error)
 }
 
-// ParticipantRepository (для AssignmentUseCase)
 type ParticipantRepository interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
 }
 
-// InvitationUseCase — публичный интерфейс приглашений
 type InvitationUseCase interface {
 	GenerateInvite(ctx context.Context, input dto.CreateInvitationInput, organizerID uuid.UUID) (dto.InvitationResponse, error)
 	JoinByInvite(ctx context.Context, input dto.JoinByInvitationInput) error
+}
+
+// ====================== НОВОЕ: ЧАТ ======================
+type ChatRepository interface {
+	CreateMessage(ctx context.Context, msg entity.Message) error
+	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
+}
+
+type ChatUseCase interface {
+	// Чат «Кому я Санта» (я — giver)
+	GetRecipientChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error)
+
+	// Чат «Кто мой Санта» (я — receiver)
+	GetSenderChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error)
+
+	// Отправить сообщение (автоматически определяется пара)
+	SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error)
+}
+
+// ====================== НОВОЕ: AssignmentRepository (для чата) ======================
+type AssignmentRepository interface {
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
 }
 </file>
 
@@ -5190,6 +5795,7 @@ DROP TABLE IF EXISTS participants;
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS invitations;
+DROP TABLE IF EXISTS messages
 -- +goose StatementEnd
 </file>
 
@@ -5420,6 +6026,22 @@ COMMENT ON COLUMN invitations.updated_at IS 'Дата последнего об�
 CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token);
 CREATE INDEX IF NOT EXISTS idx_invitations_event ON invitations(event_id);
 
+CREATE TABLE IF NOT EXISTS messages (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    sender_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Индексы для быстрого поиска чата по паре
+CREATE INDEX IF NOT EXISTS idx_messages_event_pair 
+    ON messages(event_id, sender_id, receiver_id);
+
+CREATE INDEX IF NOT EXISTS idx_messages_created_at 
+    ON messages(created_at);
+    
 -- +goose StatementEnd
 </file>
 

@@ -11,3 +11,11 @@ type CreateWishlistItemRequest struct {
 	ImageURL string `json:"imageURL,omitempty"`
 	Comment  string `json:"comment,omitempty"`
 }
+
+// NEW: запрос на обновление товара (все поля кроме title — опциональные)
+type UpdateWishlistItemRequest struct {
+	Title    string `json:"title" validate:"required"`
+	Link     string `json:"link,omitempty"`
+	ImageURL string `json:"imageURL,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+}

@@ -208,3 +208,47 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 
 	return wishlist, nil
 }
+
+// NEW: обновление товара
+func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
+	if uc.log != nil {
+		uc.log.Info("update wishlist item started",
+			slog.String("item_id", itemID.String()),
+			slog.String("title", title),
+		)
+	}
+
+	// Сначала получаем текущий item, чтобы вернуть обновлённый
+	item := entity.WishlistItem{ID: itemID, Title: title, Link: link, ImageURL: imageURL, Comment: comment}
+
+	if err := uc.repo.UpdateItem(ctx, itemID, title, link, imageURL, comment); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to update wishlist item", slog.String("error", err.Error()))
+		}
+		return entity.WishlistItem{}, fmt.Errorf("failed to update item: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("wishlist item updated successfully", slog.String("item_id", itemID.String()))
+	}
+	return item, nil
+}
+
+// NEW: удаление товара
+func (uc *UseCase) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
+	if uc.log != nil {
+		uc.log.Info("delete wishlist item started", slog.String("item_id", itemID.String()))
+	}
+
+	if err := uc.repo.DeleteItem(ctx, itemID); err != nil {
+		if uc.log != nil {
+			uc.log.Error("failed to delete wishlist item", slog.String("error", err.Error()))
+		}
+		return fmt.Errorf("failed to delete item: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("wishlist item deleted successfully", slog.String("item_id", itemID.String()))
+	}
+	return nil
+}

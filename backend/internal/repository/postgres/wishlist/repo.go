@@ -3,6 +3,7 @@ package wishlist
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
@@ -72,4 +73,30 @@ func (r *Repository) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]enti
 	defer rows.Close()
 
 	return scanWishlistItems(rows)
+}
+func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) error {
+	query := updateWishlistItemQuery(itemID.String()).
+		Set("title", title).
+		Set("link", link).
+		Set("image_url", imageURL).
+		Set("comment", comment).
+		Set("created_at", time.Now()) // или updated_at, если добавишь поле
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+// NEW: удаление товара
+func (r *Repository) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
+	query := deleteWishlistItemQuery(itemID.String())
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
 }

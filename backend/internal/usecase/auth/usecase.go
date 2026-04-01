@@ -26,7 +26,6 @@ func NewWithLogger(userUC usecase.UserUseCase, log *slog.Logger) *UseCase {
 	return &UseCase{userUC: userUC, log: log}
 }
 
-// LoginWithOAuth — основная логика OAuth (чисто по boilerplate)
 func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error) {
 	if uc.log != nil {
 		uc.log.Info("oauth login started",
@@ -39,7 +38,6 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", definitions.ErrMissingOAuthCode
 	}
 
-	// 1. Ищем существующего пользователя
 	user, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
 	if err == nil && user != nil {
 		if uc.log != nil {
@@ -52,7 +50,6 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", fmt.Errorf("failed to lookup oauth user: %w", err)
 	}
 
-	// 2. Создаём нового пользователя
 	createInput := dto.CreateUserInput{
 		Name:          info.Name,
 		Email:         info.Email,
@@ -64,7 +61,6 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// 3. Получаем реальный пользователь из БД (гарантируем правильный ID)
 	savedUser, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
 	if err != nil {
 		return "", fmt.Errorf("failed to get saved user after creation: %w", err)

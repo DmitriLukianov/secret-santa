@@ -33,3 +33,14 @@ func updateEventQuery() squirrel.UpdateBuilder {
 func deleteEventQuery() squirrel.DeleteBuilder {
 	return psql.Delete("events")
 }
+
+func getEventsForUserQuery() squirrel.SelectBuilder {
+	return getEventQuery().
+		Distinct().
+		LeftJoin("participants p ON events.id = p.event_id").
+		Where(squirrel.Or{
+			squirrel.Eq{"events.organizer_id": "?"},
+			squirrel.Eq{"p.user_id": "?"},
+		}).
+		OrderBy("events.created_at DESC")
+}

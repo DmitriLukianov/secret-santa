@@ -9,19 +9,15 @@ import (
 )
 
 type Config struct {
-	// Приложение
 	AppPort  string `env:"APP_PORT" envDefault:"8080"`
 	AppEnv   string `env:"APP_ENV" envDefault:"local"`
 	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
 
-	// База данных
 	DatabaseURL string `env:"DATABASE_URL"`
 
-	// JWT
 	JWTSecret string        `env:"JWT_SECRET"`
 	JWTTTL    time.Duration `env:"JWT_TTL" envDefault:"24h"`
 
-	// OAuth (поддержка нескольких провайдеров)
 	OAuthProvider      string `env:"OAUTH_PROVIDER" envDefault:"github"`
 	GithubClientID     string `env:"GITHUB_CLIENT_ID"`
 	GithubClientSecret string `env:"GITHUB_CLIENT_SECRET"`
@@ -46,7 +42,6 @@ func Load() *Config {
 		GithubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", ""),
 	}
 
-	// Простая валидация обязательных полей
 	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
@@ -60,12 +55,16 @@ func Load() *Config {
 	return cfg
 }
 
+// проверяем, чтобы переменная окружения была задана, если не задана - используем значение fallback
+
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
 }
+
+// преобразуем строку в тип time.Duration, если указано не верно, то по дефолту ставится 24 часа
 
 func parseDuration(s string) time.Duration {
 	d, err := time.ParseDuration(s)

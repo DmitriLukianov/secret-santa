@@ -23,7 +23,6 @@ func NewWithLogger(repo Repository, log *slog.Logger) *UseCase {
 	return &UseCase{repo: repo, log: log}
 }
 
-// Create — добавляет участника в событие
 func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error) {
 	if uc.log != nil {
 		uc.log.Info("create participant started",
@@ -77,7 +76,6 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.
 	return uc.repo.GetByEvent(ctx, eventID)
 }
 
-// MarkGiftSent — отметка, что участник отправил подарок
 func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID uuid.UUID) error {
 	if participantID == uuid.Nil {
 		return fmt.Errorf("participant id is required")
@@ -122,8 +120,6 @@ func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// GetByUserAndEvent — автоматически находит участника по user_id + event_id
-// (чтобы не нужно было вручную передавать participant_id)
 func (u *UseCase) GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error) {
 	if u.log != nil {
 		u.log.Info("get participant by user and event started",
