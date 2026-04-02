@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
@@ -114,7 +115,7 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateE
 }
 
 // UpdateStatus
-func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
+func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error {
 	query, args, err := updateEventQuery().
 		Set("status", status).
 		Set("updated_at", "NOW()").

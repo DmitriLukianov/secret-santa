@@ -9,7 +9,6 @@ import (
 
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
-	"secret-santa-backend/internal/entity"
 	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase"
 )
@@ -36,7 +35,7 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	participant, err := h.uc.Create(r.Context(), eventID, userID, entity.ParticipantRoleParticipant)
+	participant, err := h.uc.Create(r.Context(), eventID, userID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return

@@ -90,7 +90,7 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 	}
 
 	// FIXED: вся жеребьёвка теперь в одной атомарной транзакции
-	if err := uc.repo.TransactionalDraw(ctx, eventID, assignments, entity.EventStatusDrawingDone); err != nil {
+	if err := uc.repo.TransactionalDraw(ctx, eventID, assignments, definitions.EventStatusDrawingDone); err != nil {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
 
@@ -112,7 +112,7 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		ids[i] = p.UserID
 	}
 
-	maxAttempts := 200 // FIXED: увеличено для большей надёжности
+	maxAttempts := 200
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shuffled := make([]uuid.UUID, n)
@@ -138,7 +138,7 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 	return nil, fmt.Errorf("failed to generate valid derangement after %d attempts", maxAttempts)
 }
 
-// GetByEvent — возвращает ТОЛЬКО свою пару (без изменений)
+// GetByEvent — возвращает ТОЛЬКО свою пару
 func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {
 	if eventID == uuid.Nil || userID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput

@@ -3,6 +3,7 @@ package assignment
 import (
 	"context"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
@@ -14,12 +15,12 @@ type Repository interface {
 	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 
 	// FIXED: новый метод — вся жеребьёвка в одной атомарной транзакции
-	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus entity.EventStatus) error
+	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
 }
 
 type EventRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
-	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error
+	UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error
 }
 
 type ParticipantRepository interface {

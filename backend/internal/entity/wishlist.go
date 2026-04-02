@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	// ← добавлен импорт
 )
 
 type Wishlist struct {
@@ -23,12 +24,6 @@ type WishlistItem struct {
 	Comment    *string   `db:"comment"`
 	CreatedAt  time.Time `db:"created_at"`
 }
-
-const (
-	WishlistVisibilityPublic    = "public"
-	WishlistVisibilityFriends   = "friends"
-	WishlistVisibilitySantaOnly = "santa_only"
-)
 
 func NewWishlist(participantID uuid.UUID, visibility string) Wishlist {
 	now := time.Now()

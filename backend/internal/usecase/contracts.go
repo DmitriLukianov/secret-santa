@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
@@ -23,7 +24,7 @@ type EventUseCase interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
 	GetAll(ctx context.Context) ([]entity.Event, error)
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
-	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error
+	UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error
 	Delete(ctx context.Context, id uuid.UUID) error
 
 	OpenInvitation(ctx context.Context, id, userID uuid.UUID) error
@@ -68,24 +69,17 @@ type InvitationUseCase interface {
 	JoinByInvite(ctx context.Context, input dto.JoinByInvitationInput) error
 }
 
-// ====================== НОВОЕ: ЧАТ ======================
 type ChatRepository interface {
 	CreateMessage(ctx context.Context, msg entity.Message) error
 	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
 }
 
 type ChatUseCase interface {
-	// Чат «Кому я Санта» (я — giver)
 	GetRecipientChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error)
-
-	// Чат «Кто мой Санта» (я — receiver)
 	GetSenderChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error)
-
-	// Отправить сообщение (автоматически определяется пара)
 	SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error)
 }
 
-// ====================== НОВОЕ: AssignmentRepository (для чата) ======================
 type AssignmentRepository interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
 }

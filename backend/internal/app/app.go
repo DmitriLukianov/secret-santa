@@ -3,19 +3,16 @@ package app
 import (
 	"log/slog"
 	"net/http"
-	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"secret-santa-backend/internal/config"
 	"secret-santa-backend/internal/logger"
-	"secret-santa-backend/internal/middleware"
 
 	"secret-santa-backend/internal/oauth"
 
-	postgres "secret-santa-backend/internal/repository/postgres"
+	"secret-santa-backend/internal/database"
+
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
-	chatrepo "secret-santa-backend/internal/repository/postgres/chat" // ← добавлено
+	chatrepo "secret-santa-backend/internal/repository/postgres/chat"
 	eventrepo "secret-santa-backend/internal/repository/postgres/event"
 	invitationrepo "secret-santa-backend/internal/repository/postgres/invitation"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
@@ -24,7 +21,7 @@ import (
 
 	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
 	authusecase "secret-santa-backend/internal/usecase/auth"
-	chatusecase "secret-santa-backend/internal/usecase/chat" // ← добавлено
+	chatusecase "secret-santa-backend/internal/usecase/chat"
 	eventusecase "secret-santa-backend/internal/usecase/event"
 	invitationusecase "secret-santa-backend/internal/usecase/invitation"
 	participantusecase "secret-santa-backend/internal/usecase/participant"
@@ -45,7 +42,8 @@ func New() *App {
 
 	log := logger.New(cfg.LogLevel, cfg.AppEnv)
 
-	db, err := postgres.NewDB(cfg.DatabaseURL)
+	// ← ИЗМЕНЕНО: теперь используем новый пакет database
+	db, err := database.NewDB(cfg.DatabaseURL)
 	if err != nil {
 		log.Error("failed to connect to database", slog.String("error", err.Error()))
 		panic(err)
@@ -58,30 +56,18 @@ func New() *App {
 	wishlistRepo := wishlistrepo.New(db)
 	invitationRepo := invitationrepo.New(db)
 	chatRepo := chatrepo.New(db)
+
 	userUC := userusecase.NewWithLogger(userRepo, log)
 	authUC := authusecase.NewWithLogger(userUC, log)
 
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
-
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
 
-	assignmentUC := assignmentusecase.NewWithLogger(
-		assignmentRepo,
-		participantRepo,
-		eventRepo,
-		log,
-	)
-
+	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, log)
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
 
-	invitationUC := invitationusecase.NewWithLogger(
-		invitationRepo,
-		eventRepo,
-		participantUC,
-		log,
-	)
-
-	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log) // ← добавлено
+	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, log)
+	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log)
 
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
@@ -89,7 +75,7 @@ func New() *App {
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	invitationHandler := v1.NewInvitationHandler(invitationUC)
-	chatHandler := v1.NewChatHandler(chatUC) // ← добавлено
+	chatHandler := v1.NewChatHandler(chatUC)
 
 	jwtManager, err := oauth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
 	if err != nil {
@@ -105,85 +91,25 @@ func New() *App {
 
 	authHandler := v1.NewAuthHandler(authProvider, jwtManager, authUC)
 
-	r := chi.NewRouter()
-
-	r.Use(middleware.RecoveryMiddleware)
-	r.Use(middleware.TimeoutMiddleware(10 * time.Second))
-
-	r.Route("/auth", func(r chi.Router) {
-		r.Get("/login", authHandler.Login)
-		r.Get("/callback", authHandler.Callback)
-	})
-
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.NewAuthMiddleware(jwtManager, log).Handler)
-
-		r.Route("/users", func(r chi.Router) {
-			r.Post("/", userHandler.CreateUser)
-			r.Get("/", userHandler.GetUsers)
-			r.Get("/{id}", userHandler.GetUserByID)
-			r.Put("/{id}", userHandler.UpdateUser)
-			r.Delete("/{id}", userHandler.DeleteUser)
-			r.Get("/me/events", userHandler.GetMyEvents)
-		})
-
-		r.Route("/events", func(r chi.Router) {
-			r.Post("/", eventHandler.CreateEvent)
-			r.Get("/", eventHandler.GetEvents)
-			r.Get("/{id}", eventHandler.GetEventByID)
-			r.Put("/{id}", eventHandler.UpdateEvent)
-			r.Delete("/{id}", eventHandler.DeleteEvent)
-
-			r.Post("/{id}/open-invitation", eventHandler.OpenInvitation)
-			r.Post("/{id}/close-registration", eventHandler.CloseRegistration)
-			r.Post("/{id}/start-drawing", eventHandler.StartDrawing)
-			r.Post("/{id}/finish", eventHandler.FinishEvent)
-			r.Post("/{id}/cancel", eventHandler.CancelEvent)
-
-			r.Post("/{eventId}/participants", participantHandler.Add)
-			r.Get("/{eventId}/participants", participantHandler.GetByEvent)
-			r.Post("/{eventId}/assign", assignmentHandler.Draw)
-			r.Get("/{eventId}/assignments", assignmentHandler.GetByEvent)
-
-			// ====================== ЧАТ ======================
-			r.Route("/{eventId}/chat", func(r chi.Router) {
-				r.Get("/recipient", chatHandler.GetRecipientChat) // Кому я Санта
-				r.Get("/sender", chatHandler.GetSenderChat)       // Кто мой Санта
-				r.Post("/messages", chatHandler.SendMessage)      // Отправить сообщение
-			})
-		})
-
-		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
-		r.Delete("/participants/{id}", participantHandler.Delete)
-
-		r.Route("/users/{userId}/wishlist", func(r chi.Router) {
-			r.Post("/", wishlistHandler.Create)
-			r.Get("/", wishlistHandler.GetByUser)
-		})
-
-		r.Route("/wishlists/{participantId}", func(r chi.Router) {
-			r.Get("/", wishlistHandler.GetByParticipant)
-		})
-
-		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {
-			r.Post("/", wishlistHandler.AddItem)
-			r.Get("/", wishlistHandler.GetItems)
-			r.Put("/{itemId}", wishlistHandler.UpdateItem)
-			r.Delete("/{itemId}", wishlistHandler.DeleteItem)
-		})
-
-		r.Route("/invitations", func(r chi.Router) {
-			r.Post("/generate", invitationHandler.GenerateInvite)
-		})
-		r.Post("/invite/join", invitationHandler.JoinByInvite)
-	})
+	router := v1.NewRouter(
+		authHandler,
+		userHandler,
+		eventHandler,
+		participantHandler,
+		assignmentHandler,
+		wishlistHandler,
+		invitationHandler,
+		chatHandler,
+		jwtManager,
+		log,
+	)
 
 	return &App{
 		cfg: cfg,
 		log: log,
 		server: &http.Server{
 			Addr:    ":" + cfg.AppPort,
-			Handler: r,
+			Handler: router,
 		},
 	}
 }

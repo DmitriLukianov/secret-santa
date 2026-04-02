@@ -73,9 +73,13 @@ internal/
         event.go
         invitation.go
         participant.go
+        router.go
         user.go
         wishlist.go
+  database/
+    database.go
   definitions/
+    constants.go
     errors.go
   dto/
     assignment.go
@@ -117,6 +121,8 @@ internal/
         queries.go
         repo.go
       invitation/
+        mapper.go
+        queries.go
         repo.go
       participant/
         mapper.go
@@ -130,7 +136,6 @@ internal/
         mapper.go
         queries.go
         repo.go
-      db.go
   usecase/
     assignment/
       interfaces.go
@@ -192,19 +197,16 @@ package app
 import (
 	"log/slog"
 	"net/http"
-	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"secret-santa-backend/internal/config"
 	"secret-santa-backend/internal/logger"
-	"secret-santa-backend/internal/middleware"
 
 	"secret-santa-backend/internal/oauth"
 
-	postgres "secret-santa-backend/internal/repository/postgres"
+	"secret-santa-backend/internal/database"
+
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
-	chatrepo "secret-santa-backend/internal/repository/postgres/chat" // ← добавлено
+	chatrepo "secret-santa-backend/internal/repository/postgres/chat"
 	eventrepo "secret-santa-backend/internal/repository/postgres/event"
 	invitationrepo "secret-santa-backend/internal/repository/postgres/invitation"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
@@ -213,7 +215,7 @@ import (
 
 	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
 	authusecase "secret-santa-backend/internal/usecase/auth"
-	chatusecase "secret-santa-backend/internal/usecase/chat" // ← добавлено
+	chatusecase "secret-santa-backend/internal/usecase/chat"
 	eventusecase "secret-santa-backend/internal/usecase/event"
 	invitationusecase "secret-santa-backend/internal/usecase/invitation"
 	participantusecase "secret-santa-backend/internal/usecase/participant"
@@ -234,7 +236,8 @@ func New() *App {
 
 	log := logger.New(cfg.LogLevel, cfg.AppEnv)
 
-	db, err := postgres.NewDB(cfg.DatabaseURL)
+	// ← ИЗМЕНЕНО: теперь используем новый пакет database
+	db, err := database.NewDB(cfg.DatabaseURL)
 	if err != nil {
 		log.Error("failed to connect to database", slog.String("error", err.Error()))
 		panic(err)
@@ -246,32 +249,19 @@ func New() *App {
 	assignmentRepo := assignmentrepo.New(db)
 	wishlistRepo := wishlistrepo.New(db)
 	invitationRepo := invitationrepo.New(db)
-	chatRepo := chatrepo.New(db) // ← добавлено
+	chatRepo := chatrepo.New(db)
 
 	userUC := userusecase.NewWithLogger(userRepo, log)
 	authUC := authusecase.NewWithLogger(userUC, log)
 
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
-
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
 
-	assignmentUC := assignmentusecase.NewWithLogger(
-		assignmentRepo,
-		participantRepo,
-		eventRepo,
-		log,
-	)
-
+	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, log)
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
 
-	invitationUC := invitationusecase.NewWithLogger(
-		invitationRepo,
-		eventRepo,
-		participantUC,
-		log,
-	)
-
-	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log) // ← добавлено
+	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, log)
+	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log)
 
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
@@ -279,7 +269,7 @@ func New() *App {
 	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	invitationHandler := v1.NewInvitationHandler(invitationUC)
-	chatHandler := v1.NewChatHandler(chatUC) // ← добавлено
+	chatHandler := v1.NewChatHandler(chatUC)
 
 	jwtManager, err := oauth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
 	if err != nil {
@@ -295,85 +285,25 @@ func New() *App {
 
 	authHandler := v1.NewAuthHandler(authProvider, jwtManager, authUC)
 
-	r := chi.NewRouter()
-
-	r.Use(middleware.RecoveryMiddleware)
-	r.Use(middleware.TimeoutMiddleware(10 * time.Second))
-
-	r.Route("/auth", func(r chi.Router) {
-		r.Get("/login", authHandler.Login)
-		r.Get("/callback", authHandler.Callback)
-	})
-
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.NewAuthMiddleware(jwtManager, log).Handler)
-
-		r.Route("/users", func(r chi.Router) {
-			r.Post("/", userHandler.CreateUser)
-			r.Get("/", userHandler.GetUsers)
-			r.Get("/{id}", userHandler.GetUserByID)
-			r.Put("/{id}", userHandler.UpdateUser)
-			r.Delete("/{id}", userHandler.DeleteUser)
-			r.Get("/me/events", userHandler.GetMyEvents)
-		})
-
-		r.Route("/events", func(r chi.Router) {
-			r.Post("/", eventHandler.CreateEvent)
-			r.Get("/", eventHandler.GetEvents)
-			r.Get("/{id}", eventHandler.GetEventByID)
-			r.Put("/{id}", eventHandler.UpdateEvent)
-			r.Delete("/{id}", eventHandler.DeleteEvent)
-
-			r.Post("/{id}/open-invitation", eventHandler.OpenInvitation)
-			r.Post("/{id}/close-registration", eventHandler.CloseRegistration)
-			r.Post("/{id}/start-drawing", eventHandler.StartDrawing)
-			r.Post("/{id}/finish", eventHandler.FinishEvent)
-			r.Post("/{id}/cancel", eventHandler.CancelEvent)
-
-			r.Post("/{eventId}/participants", participantHandler.Add)
-			r.Get("/{eventId}/participants", participantHandler.GetByEvent)
-			r.Post("/{eventId}/assign", assignmentHandler.Draw)
-			r.Get("/{eventId}/assignments", assignmentHandler.GetByEvent)
-
-			// ====================== ЧАТ ======================
-			r.Route("/{eventId}/chat", func(r chi.Router) {
-				r.Get("/recipient", chatHandler.GetRecipientChat) // Кому я Санта
-				r.Get("/sender", chatHandler.GetSenderChat)       // Кто мой Санта
-				r.Post("/messages", chatHandler.SendMessage)      // Отправить сообщение
-			})
-		})
-
-		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
-		r.Delete("/participants/{id}", participantHandler.Delete)
-
-		r.Route("/users/{userId}/wishlist", func(r chi.Router) {
-			r.Post("/", wishlistHandler.Create)
-			r.Get("/", wishlistHandler.GetByUser)
-		})
-
-		r.Route("/wishlists/{participantId}", func(r chi.Router) {
-			r.Get("/", wishlistHandler.GetByParticipant)
-		})
-
-		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {
-			r.Post("/", wishlistHandler.AddItem)
-			r.Get("/", wishlistHandler.GetItems)
-			r.Put("/{itemId}", wishlistHandler.UpdateItem)
-			r.Delete("/{itemId}", wishlistHandler.DeleteItem)
-		})
-
-		r.Route("/invitations", func(r chi.Router) {
-			r.Post("/generate", invitationHandler.GenerateInvite)
-		})
-		r.Post("/invite/join", invitationHandler.JoinByInvite)
-	})
+	router := v1.NewRouter(
+		authHandler,
+		userHandler,
+		eventHandler,
+		participantHandler,
+		assignmentHandler,
+		wishlistHandler,
+		invitationHandler,
+		chatHandler,
+		jwtManager,
+		log,
+	)
 
 	return &App{
 		cfg: cfg,
 		log: log,
 		server: &http.Server{
 			Addr:    ":" + cfg.AppPort,
-			Handler: r,
+			Handler: router,
 		},
 	}
 }
@@ -442,12 +372,16 @@ func Load() *Config {
 	return cfg
 }
 
+// проверяем, чтобы переменная окружения была задана, если не задана - используем значение fallback
+
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
 }
+
+// преобразуем строку в тип time.Duration, если указано не верно, то по дефолту ставится 24 часа
 
 func parseDuration(s string) time.Duration {
 	d, err := time.ParseDuration(s)
@@ -1521,7 +1455,6 @@ import (
 
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
-	"secret-santa-backend/internal/entity"
 	"secret-santa-backend/internal/middleware"
 	"secret-santa-backend/internal/usecase"
 )
@@ -1548,7 +1481,7 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	participant, err := h.uc.Create(r.Context(), eventID, userID, entity.ParticipantRoleParticipant)
+	participant, err := h.uc.Create(r.Context(), eventID, userID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1630,6 +1563,115 @@ func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+</file>
+
+<file path="internal/controller/http/v1/router.go">
+package v1
+
+import (
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/oauth"
+)
+
+func NewRouter(
+	authHandler *AuthHandler,
+	userHandler *UserHandler,
+	eventHandler *EventHandler,
+	participantHandler *ParticipantHandler,
+	assignmentHandler *AssignmentHandler,
+	wishlistHandler *WishlistHandler,
+	invitationHandler *InvitationHandler,
+	chatHandler *ChatHandler,
+	jwtManager *oauth.JWTManager,
+	log *slog.Logger,
+) *chi.Mux {
+
+	router := chi.NewRouter()
+
+	router.Use(middleware.RecoveryMiddleware)
+	router.Use(middleware.TimeoutMiddleware(10 * time.Second))
+
+	router.Route("/auth", func(r chi.Router) {
+		r.Get("/login", authHandler.Login)
+		r.Get("/callback", authHandler.Callback)
+	})
+
+	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	router.Group(func(r chi.Router) {
+		r.Use(middleware.NewAuthMiddleware(jwtManager, log).Handler)
+
+		r.Route("/users", func(r chi.Router) {
+			r.Post("/", userHandler.CreateUser)
+			r.Get("/", userHandler.GetUsers)
+			r.Get("/{id}", userHandler.GetUserByID)
+			r.Put("/{id}", userHandler.UpdateUser)
+			r.Delete("/{id}", userHandler.DeleteUser)
+			r.Get("/me/events", userHandler.GetMyEvents)
+		})
+
+		r.Route("/events", func(r chi.Router) {
+			r.Post("/", eventHandler.CreateEvent)
+			r.Get("/", eventHandler.GetEvents)
+			r.Get("/{id}", eventHandler.GetEventByID)
+			r.Put("/{id}", eventHandler.UpdateEvent)
+			r.Delete("/{id}", eventHandler.DeleteEvent)
+
+			r.Post("/{id}/open-invitation", eventHandler.OpenInvitation)
+			r.Post("/{id}/close-registration", eventHandler.CloseRegistration)
+			r.Post("/{id}/start-drawing", eventHandler.StartDrawing)
+			r.Post("/{id}/finish", eventHandler.FinishEvent)
+			r.Post("/{id}/cancel", eventHandler.CancelEvent)
+
+			r.Post("/{eventId}/participants", participantHandler.Add)
+			r.Get("/{eventId}/participants", participantHandler.GetByEvent)
+			r.Post("/{eventId}/assign", assignmentHandler.Draw)
+			r.Get("/{eventId}/assignments", assignmentHandler.GetByEvent)
+
+			r.Route("/{eventId}/chat", func(r chi.Router) {
+				r.Get("/recipient", chatHandler.GetRecipientChat)
+				r.Get("/sender", chatHandler.GetSenderChat)
+				r.Post("/messages", chatHandler.SendMessage)
+			})
+		})
+
+		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
+		r.Delete("/participants/{id}", participantHandler.Delete)
+
+		r.Route("/users/{userId}/wishlist", func(r chi.Router) {
+			r.Post("/", wishlistHandler.Create)
+			r.Get("/", wishlistHandler.GetByUser)
+		})
+
+		r.Route("/wishlists/{participantId}", func(r chi.Router) {
+			r.Get("/", wishlistHandler.GetByParticipant)
+		})
+
+		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {
+			r.Post("/", wishlistHandler.AddItem)
+			r.Get("/", wishlistHandler.GetItems)
+			r.Put("/{itemId}", wishlistHandler.UpdateItem)
+			r.Delete("/{itemId}", wishlistHandler.DeleteItem)
+		})
+
+		r.Route("/invitations", func(r chi.Router) {
+			r.Post("/generate", invitationHandler.GenerateInvite)
+		})
+		r.Post("/invite/join", invitationHandler.JoinByInvite)
+	})
+
+	return router
 }
 </file>
 
@@ -2053,6 +2095,64 @@ func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 }
 </file>
 
+<file path="internal/database/database.go">
+package database
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+func NewDB(connString string) (*pgxpool.Pool, error) {
+	ctx := context.Background()
+
+	dbpool, err := pgxpool.New(ctx, connString)
+	if err != nil {
+		return nil, fmt.Errorf("unable to connect to database: %w", err)
+	}
+
+	err = dbpool.Ping(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("database ping failed: %w", err)
+	}
+
+	return dbpool, nil
+}
+</file>
+
+<file path="internal/definitions/constants.go">
+package definitions
+
+// ====================== EVENT STATUS ======================
+type EventStatus string
+
+const (
+	EventStatusDraft              EventStatus = "draft"
+	EventStatusInvitationOpen     EventStatus = "invitation_open"
+	EventStatusRegistrationClosed EventStatus = "registration_closed"
+	EventStatusDrawingPending     EventStatus = "drawing_pending"
+	EventStatusDrawingDone        EventStatus = "drawing_done"
+	EventStatusActive             EventStatus = "active"
+	EventStatusFinished           EventStatus = "finished"
+	EventStatusCancelled          EventStatus = "cancelled"
+)
+
+// ====================== PARTICIPANT ROLE ======================
+const (
+	ParticipantRoleOrganizer   = "organizer"
+	ParticipantRoleParticipant = "participant"
+)
+
+// ====================== WISHLIST VISIBILITY ======================
+const (
+	WishlistVisibilityPublic    = "public"
+	WishlistVisibilityFriends   = "friends"
+	WishlistVisibilitySantaOnly = "santa_only"
+)
+</file>
+
 <file path="internal/definitions/errors.go">
 package definitions
 
@@ -2265,37 +2365,24 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"secret-santa-backend/internal/definitions" // ← добавлен импорт
 )
-
-type EventStatus string
-
-const (
-	EventStatusDraft              EventStatus = "draft"               // Черновик (только организатор может редактировать)
-	EventStatusInvitationOpen     EventStatus = "invitation_open"     // Открыт набор участников по ссылке
-	EventStatusRegistrationClosed EventStatus = "registration_closed" // Набор участников закрыт
-	EventStatusDrawingPending     EventStatus = "drawing_pending"     // Готов к жеребьёвке
-	EventStatusDrawingDone        EventStatus = "drawing_done"        // Жеребьёвка проведена, назначения видны
-	EventStatusActive             EventStatus = "active"              // Игра идёт (можно отмечать отправку подарков)
-	EventStatusFinished           EventStatus = "finished"            // Событие завершено
-	EventStatusCancelled          EventStatus = "cancelled"           // Отменено
-)
-
-var ErrInvalidEventState = errors.New("invalid event state transition")
 
 type Event struct {
-	ID              uuid.UUID   `db:"id"`
-	Title           string      `db:"title"`
-	Description     *string     `db:"description"`
-	Rules           *string     `db:"rules"`
-	Recommendations *string     `db:"recommendations"`
-	OrganizerID     uuid.UUID   `db:"organizer_id"`
-	StartDate       time.Time   `db:"start_date"`
-	DrawDate        *time.Time  `db:"draw_date"`
-	EndDate         time.Time   `db:"end_date"`
-	Status          EventStatus `db:"status"`
-	MaxParticipants int         `db:"max_participants"`
-	CreatedAt       time.Time   `db:"created_at"`
-	UpdatedAt       time.Time   `db:"updated_at"`
+	ID              uuid.UUID               `db:"id"`
+	Title           string                  `db:"title"`
+	Description     *string                 `db:"description"`
+	Rules           *string                 `db:"rules"`
+	Recommendations *string                 `db:"recommendations"`
+	OrganizerID     uuid.UUID               `db:"organizer_id"`
+	StartDate       time.Time               `db:"start_date"`
+	DrawDate        *time.Time              `db:"draw_date"`
+	EndDate         time.Time               `db:"end_date"`
+	Status          definitions.EventStatus `db:"status"`
+	MaxParticipants int                     `db:"max_participants"`
+	CreatedAt       time.Time               `db:"created_at"`
+	UpdatedAt       time.Time               `db:"updated_at"`
 }
 
 // NewEvent создаёт событие в статусе draft
@@ -2319,7 +2406,7 @@ func NewEvent(
 		StartDate:       startDate,
 		DrawDate:        drawDate,
 		EndDate:         endDate,
-		Status:          EventStatusDraft,
+		Status:          definitions.EventStatusDraft,
 		MaxParticipants: maxParticipants,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -2327,27 +2414,27 @@ func NewEvent(
 }
 
 // CanTransitionTo — проверяет возможность перехода
-func (e Event) CanTransitionTo(newStatus EventStatus) bool {
+func (e Event) CanTransitionTo(newStatus definitions.EventStatus) bool {
 	switch e.Status {
-	case EventStatusDraft:
-		return newStatus == EventStatusInvitationOpen || newStatus == EventStatusCancelled
-	case EventStatusInvitationOpen:
-		return newStatus == EventStatusRegistrationClosed || newStatus == EventStatusCancelled
-	case EventStatusRegistrationClosed:
-		return newStatus == EventStatusDrawingPending || newStatus == EventStatusDrawingDone || newStatus == EventStatusCancelled // ← добавили drawing_done
-	case EventStatusDrawingPending:
-		return newStatus == EventStatusDrawingDone || newStatus == EventStatusCancelled
-	case EventStatusDrawingDone:
-		return newStatus == EventStatusActive || newStatus == EventStatusCancelled
-	case EventStatusActive:
-		return newStatus == EventStatusFinished || newStatus == EventStatusCancelled
+	case definitions.EventStatusDraft:
+		return newStatus == definitions.EventStatusInvitationOpen || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusInvitationOpen:
+		return newStatus == definitions.EventStatusRegistrationClosed || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusRegistrationClosed:
+		return newStatus == definitions.EventStatusDrawingPending || newStatus == definitions.EventStatusDrawingDone || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusDrawingPending:
+		return newStatus == definitions.EventStatusDrawingDone || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusDrawingDone:
+		return newStatus == definitions.EventStatusActive || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusActive:
+		return newStatus == definitions.EventStatusFinished || newStatus == definitions.EventStatusCancelled
 	default:
 		return false
 	}
 }
 
 // TransitionTo — выполняет переход статуса с проверкой
-func (e *Event) TransitionTo(newStatus EventStatus) error {
+func (e *Event) TransitionTo(newStatus definitions.EventStatus) error {
 	if !e.CanTransitionTo(newStatus) {
 		return ErrInvalidEventState
 	}
@@ -2359,20 +2446,22 @@ func (e *Event) TransitionTo(newStatus EventStatus) error {
 // ====================== Вспомогательные методы ======================
 
 func (e Event) IsDrawable() bool {
-	return e.Status == EventStatusRegistrationClosed || e.Status == EventStatusDrawingPending
+	return e.Status == definitions.EventStatusRegistrationClosed || e.Status == definitions.EventStatusDrawingPending
 }
 
 func (e Event) CanAddParticipants() bool {
-	return e.Status == EventStatusDraft || e.Status == EventStatusInvitationOpen
+	return e.Status == definitions.EventStatusDraft || e.Status == definitions.EventStatusInvitationOpen
 }
 
 func (e Event) CanEdit() bool {
-	return e.Status != EventStatusFinished && e.Status != EventStatusCancelled
+	return e.Status != definitions.EventStatusFinished && e.Status != definitions.EventStatusCancelled
 }
 
 func (e Event) IsActive() bool {
-	return e.Status == EventStatusActive || e.Status == EventStatusDrawingDone
+	return e.Status == definitions.EventStatusActive || e.Status == definitions.EventStatusDrawingDone
 }
+
+var ErrInvalidEventState = errors.New("invalid event state transition")
 </file>
 
 <file path="internal/entity/invitation.go">
@@ -2454,6 +2543,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	// ← добавлен импорт
 )
 
 type Participant struct {
@@ -2479,11 +2569,6 @@ func NewParticipant(eventID, userID uuid.UUID, role string) Participant {
 		UpdatedAt: now,
 	}
 }
-
-const (
-	ParticipantRoleOrganizer   = "organizer"
-	ParticipantRoleParticipant = "participant"
-)
 </file>
 
 <file path="internal/entity/user.go">
@@ -2526,6 +2611,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	// ← добавлен импорт
 )
 
 type Wishlist struct {
@@ -2545,12 +2631,6 @@ type WishlistItem struct {
 	Comment    *string   `db:"comment"`
 	CreatedAt  time.Time `db:"created_at"`
 }
-
-const (
-	WishlistVisibilityPublic    = "public"
-	WishlistVisibilityFriends   = "friends"
-	WishlistVisibilitySantaOnly = "santa_only"
-)
 
 func NewWishlist(participantID uuid.UUID, visibility string) Wishlist {
 	now := time.Now()
@@ -2582,36 +2662,29 @@ package logger
 import (
 	"log/slog"
 	"os"
-	"runtime"
 	"time"
 )
 
-const (
-	serviceName = "secret-santa"
-)
+const serviceName = "secret-santa"
 
 func New(levelStr, stage string) *slog.Logger {
 	opts := &slog.HandlerOptions{
-		Level: parseLevel(levelStr),
+		Level:     parseLevel(levelStr),
+		AddSource: true,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			if a.Key == slog.TimeKey {
-				return slog.Attr{
-					Key:   "timestamp",
-					Value: slog.StringValue(a.Value.Time().Format(time.RFC3339)),
-				}
-			}
-			if a.Key == slog.LevelKey {
-				return slog.Attr{
-					Key:   "severity",
-					Value: a.Value,
-				}
+			switch a.Key {
+			case slog.TimeKey:
+				return slog.String("timestamp", a.Value.Time().Format(time.RFC3339))
+			case slog.LevelKey:
+				return slog.String("severity", a.Value.String())
+			case slog.MessageKey:
+				return slog.String("rest", a.Value.String())
 			}
 			return a
 		},
 	}
 
 	handler := slog.NewJSONHandler(os.Stdout, opts)
-
 	log := slog.New(handler).With(
 		slog.String("service", serviceName),
 		slog.String("stage", stage),
@@ -2624,6 +2697,8 @@ func parseLevel(level string) slog.Level {
 	switch level {
 	case "debug":
 		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
 	case "warn":
 		return slog.LevelWarn
 	case "error":
@@ -2631,22 +2706,6 @@ func parseLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
-}
-
-func WithSource(log *slog.Logger) *slog.Logger {
-	pc, file, line, ok := runtime.Caller(2)
-	if !ok {
-		return log
-	}
-	fn := runtime.FuncForPC(pc)
-
-	return log.With(
-		slog.Group("source",
-			slog.String("function", fn.Name()),
-			slog.String("file", file),
-			slog.Int("line", line),
-		),
-	)
 }
 </file>
 
@@ -3039,6 +3098,7 @@ import (
 	"context"
 	"fmt"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
@@ -3092,7 +3152,7 @@ func (r *Repository) DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 }
 
 // FIXED: новая атомарная операция — вся жеребьёвка в одной транзакции
-func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus entity.EventStatus) error {
+func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -3146,7 +3206,7 @@ func (r *Repository) createTx(ctx context.Context, tx pgx.Tx, a entity.Assignmen
 	return err
 }
 
-func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, status entity.EventStatus) error {
+func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, status definitions.EventStatus) error {
 	// Используем тот же query-builder, что и в event repo (можно вынести в общий helper при желании)
 	// Здесь для минимальности используем прямой SQL
 	_, err := tx.Exec(ctx, `
@@ -3366,6 +3426,17 @@ func updateEventQuery() squirrel.UpdateBuilder {
 func deleteEventQuery() squirrel.DeleteBuilder {
 	return psql.Delete("events")
 }
+
+func getEventsForUserQuery() squirrel.SelectBuilder {
+	return getEventQuery().
+		Distinct().
+		LeftJoin("participants p ON events.id = p.event_id").
+		Where(squirrel.Or{
+			squirrel.Eq{"events.organizer_id": "?"},
+			squirrel.Eq{"p.user_id": "?"},
+		}).
+		OrderBy("events.created_at DESC")
+}
 </file>
 
 <file path="internal/repository/postgres/event/repo.go">
@@ -3373,12 +3444,12 @@ package event
 
 import (
 	"context"
-	"strconv"
-	"strings"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -3391,44 +3462,54 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
+// Create
 func (r *Repository) Create(ctx context.Context, e entity.Event) error {
-	query := `
-		INSERT INTO events (
-			id, title, description, rules, recommendations, organizer_id,
-			start_date, draw_date, end_date, status, max_participants,
-			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-	`
+	query, args, err := createEventQuery().
+		Values(
+			e.ID,
+			e.Title,
+			e.Description,
+			e.Rules,
+			e.Recommendations,
+			e.OrganizerID,
+			e.StartDate,
+			e.DrawDate,
+			e.EndDate,
+			e.Status,
+			e.MaxParticipants,
+			e.CreatedAt,
+			e.UpdatedAt,
+		).
+		ToSql()
+	if err != nil {
+		return err
+	}
 
-	_, err := r.db.Exec(ctx, query,
-		e.ID, e.Title, e.Description, e.Rules, e.Recommendations,
-		e.OrganizerID, e.StartDate, e.DrawDate, e.EndDate,
-		e.Status, e.MaxParticipants, e.CreatedAt, e.UpdatedAt,
-	)
+	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
+// GetByID
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
-	query := `
-		SELECT id, title, description, rules, recommendations, organizer_id,
-		       start_date, draw_date, end_date, status, max_participants,
-		       created_at, updated_at
-		FROM events WHERE id = $1
-	`
+	query, args, err := getEventQuery().
+		Where("id = ?", id).
+		ToSql()
+	if err != nil {
+		return nil, err
+	}
 
-	row := r.db.QueryRow(ctx, query, id)
+	row := r.db.QueryRow(ctx, query, args...)
 	return ScanEvent(row)
 }
 
+// GetAll
 func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
-	query := `
-		SELECT id, title, description, rules, recommendations, organizer_id,
-		       start_date, draw_date, end_date, status, max_participants,
-		       created_at, updated_at
-		FROM events
-	`
+	query, args, err := listEventsQuery().ToSql()
+	if err != nil {
+		return nil, err
+	}
 
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -3437,92 +3518,85 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	return ScanEvents(rows)
 }
 
+// Update
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
-	query := "UPDATE events SET updated_at = NOW(), "
-	args := []interface{}{}
-	argID := 1
+	q := updateEventQuery().Set("updated_at", "NOW()")
 
 	if input.Title != nil {
-		query += "title = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.Title)
-		argID++
+		q = q.Set("title", *input.Title)
 	}
 	if input.Description != nil {
-		query += "description = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.Description)
-		argID++
+		q = q.Set("description", *input.Description)
 	}
 	if input.Rules != nil {
-		query += "rules = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.Rules)
-		argID++
+		q = q.Set("rules", *input.Rules)
 	}
 	if input.Recommendations != nil {
-		query += "recommendations = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.Recommendations)
-		argID++
+		q = q.Set("recommendations", *input.Recommendations)
 	}
 	if input.StartDate != nil {
-		query += "start_date = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.StartDate)
-		argID++
+		q = q.Set("start_date", *input.StartDate)
 	}
 	if input.DrawDate != nil {
-		query += "draw_date = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.DrawDate)
-		argID++
+		q = q.Set("draw_date", *input.DrawDate)
 	}
 	if input.EndDate != nil {
-		query += "end_date = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.EndDate)
-		argID++
+		q = q.Set("end_date", *input.EndDate)
 	}
 	if input.MaxParticipants != nil {
-		query += "max_participants = $" + strconv.Itoa(argID) + ", "
-		args = append(args, *input.MaxParticipants)
-		argID++
+		q = q.Set("max_participants", *input.MaxParticipants)
 	}
 
-	if len(args) == 0 {
-		return nil
+	query, args, err := q.Where("id = ?", id).ToSql()
+	if err != nil {
+		return err
 	}
 
-	query = strings.TrimSuffix(query, ", ")
-	query += " WHERE id = $" + strconv.Itoa(argID)
-	args = append(args, id)
-
-	_, err := r.db.Exec(ctx, query, args...)
+	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
-func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
-	query := `
-		UPDATE events 
-		SET status = $1, updated_at = NOW() 
-		WHERE id = $2
-	`
-	_, err := r.db.Exec(ctx, query, status, id)
+// UpdateStatus
+func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error {
+	query, args, err := updateEventQuery().
+		Set("status", status).
+		Set("updated_at", "NOW()").
+		Where("id = ?", id).
+		ToSql()
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
+// Delete
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM events WHERE id = $1`, id)
+	query, args, err := deleteEventQuery().
+		Where("id = ?", id).
+		ToSql()
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
+// GetEventsForUser — теперь тоже через queries.go
 func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
-	query := `
-		SELECT DISTINCT e.id, e.title, e.description, e.rules, e.recommendations, 
-		       e.organizer_id, e.start_date, e.draw_date, e.end_date, 
-		       e.status, e.max_participants, e.created_at, e.updated_at
-		FROM events e
-		LEFT JOIN participants p ON e.id = p.event_id
-		WHERE e.organizer_id = $1 
-		   OR p.user_id = $1
-		ORDER BY e.created_at DESC
-	`
+	query, args, err := getEventsForUserQuery().
+		Where(squirrel.Or{
+			squirrel.Eq{"events.organizer_id": userID},
+			squirrel.Eq{"p.user_id": userID},
+		}).
+		ToSql()
+	if err != nil {
+		return nil, err
+	}
 
-	rows, err := r.db.Query(ctx, query, userID)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -3532,16 +3606,62 @@ func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]
 }
 </file>
 
+<file path="internal/repository/postgres/invitation/mapper.go">
+package invitation
+
+import (
+	"secret-santa-backend/internal/entity"
+
+	"github.com/jackc/pgx/v5"
+)
+
+func ScanInvitation(row pgx.Row) (*entity.Invitation, error) {
+	var i entity.Invitation
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.Token,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &i, nil
+}
+</file>
+
+<file path="internal/repository/postgres/invitation/queries.go">
+package invitation
+
+import "github.com/Masterminds/squirrel"
+
+var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+func createInvitationQuery() squirrel.InsertBuilder {
+	return qb.Insert("invitations").
+		Columns("id", "event_id", "token", "expires_at", "created_by", "created_at", "updated_at")
+}
+
+func getInvitationByTokenQuery() squirrel.SelectBuilder {
+	return qb.Select(
+		"id", "event_id", "token", "expires_at",
+		"created_by", "created_at", "updated_at",
+	).
+		From("invitations")
+}
+</file>
+
 <file path="internal/repository/postgres/invitation/repo.go">
 package invitation
 
 import (
 	"context"
-	"fmt"
 
 	"secret-santa-backend/internal/entity"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -3554,46 +3674,35 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) Create(ctx context.Context, i entity.Invitation) error {
-	query := `
-		INSERT INTO invitations (
-			id, event_id, token, expires_at, created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`
+	query, args, err := createInvitationQuery().
+		Values(
+			i.ID,
+			i.EventID,
+			i.Token,
+			i.ExpiresAt,
+			i.CreatedBy,
+			i.CreatedAt,
+			i.UpdatedAt,
+		).
+		ToSql()
+	if err != nil {
+		return err
+	}
 
-	_, err := r.db.Exec(ctx, query,
-		i.ID, i.EventID, i.Token, i.ExpiresAt,
-		i.CreatedBy, i.CreatedAt, i.UpdatedAt,
-	)
+	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
 func (r *Repository) GetByToken(ctx context.Context, token string) (*entity.Invitation, error) {
-	query := `
-		SELECT id, event_id, token, expires_at, created_by, created_at, updated_at
-		FROM invitations
-		WHERE token = $1
-	`
-
-	row := r.db.QueryRow(ctx, query, token)
-	return scanInvitation(row)
-}
-
-// scanInvitation — обновлённая версия без поля Used
-func scanInvitation(row pgx.Row) (*entity.Invitation, error) {
-	var i entity.Invitation
-	err := row.Scan(
-		&i.ID,
-		&i.EventID,
-		&i.Token,
-		&i.ExpiresAt,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
+	query, args, err := getInvitationByTokenQuery().
+		Where("token = ?", token).
+		ToSql()
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan invitation: %w", err)
+		return nil, err
 	}
-	return &i, nil
+
+	row := r.db.QueryRow(ctx, query, args...)
+	return ScanInvitation(row)
 }
 </file>
 
@@ -4196,39 +4305,13 @@ func (r *Repository) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 }
 </file>
 
-<file path="internal/repository/postgres/db.go">
-package repository
-
-import (
-	"context"
-	"fmt"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-func NewDB(connString string) (*pgxpool.Pool, error) {
-	ctx := context.Background()
-
-	dbpool, err := pgxpool.New(ctx, connString)
-	if err != nil {
-		return nil, fmt.Errorf("unable to connect to database: %w", err)
-	}
-
-	err = dbpool.Ping(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("database ping failed: %w", err)
-	}
-
-	return dbpool, nil
-}
-</file>
-
 <file path="internal/usecase/assignment/interfaces.go">
 package assignment
 
 import (
 	"context"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
@@ -4240,12 +4323,12 @@ type Repository interface {
 	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 
 	// FIXED: новый метод — вся жеребьёвка в одной атомарной транзакции
-	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus entity.EventStatus) error
+	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
 }
 
 type EventRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
-	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error
+	UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error
 }
 
 type ParticipantRepository interface {
@@ -4346,7 +4429,7 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 	}
 
 	// FIXED: вся жеребьёвка теперь в одной атомарной транзакции
-	if err := uc.repo.TransactionalDraw(ctx, eventID, assignments, entity.EventStatusDrawingDone); err != nil {
+	if err := uc.repo.TransactionalDraw(ctx, eventID, assignments, definitions.EventStatusDrawingDone); err != nil {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
 
@@ -4368,7 +4451,7 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		ids[i] = p.UserID
 	}
 
-	maxAttempts := 200 // FIXED: увеличено для большей надёжности
+	maxAttempts := 200
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shuffled := make([]uuid.UUID, n)
@@ -4394,7 +4477,7 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 	return nil, fmt.Errorf("failed to generate valid derangement after %d attempts", maxAttempts)
 }
 
-// GetByEvent — возвращает ТОЛЬКО свою пару (без изменений)
+// GetByEvent — возвращает ТОЛЬКО свою пару
 func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {
 	if eventID == uuid.Nil || userID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -4639,6 +4722,7 @@ package event
 import (
 	"context"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
@@ -4650,7 +4734,7 @@ type Repository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
 	GetAll(ctx context.Context) ([]entity.Event, error)
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
-	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error
+	UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
 }
@@ -4726,7 +4810,7 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 	}
 
 	// 2. 🔥 Автоматически добавляем организатора как участника
-	organizerParticipant := entity.NewParticipant(event.ID, organizerID, entity.ParticipantRoleOrganizer)
+	organizerParticipant := entity.NewParticipant(event.ID, organizerID, definitions.ParticipantRoleOrganizer)
 	if err := uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create organizer as participant", slog.String("error", err.Error()))
@@ -4743,7 +4827,7 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 	return event, nil
 }
 
-// ====================== Остальные методы без изменений ======================
+// ====================== Остальные методы ======================
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	if id == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -4789,7 +4873,7 @@ func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEve
 	return nil
 }
 
-func (uc *UseCase) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
+func (uc *UseCase) UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error {
 	if id == uuid.Nil {
 		return definitions.ErrInvalidUserInput
 	}
@@ -4837,26 +4921,26 @@ func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 func (uc *UseCase) Finish(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusFinished)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusFinished)
 }
 
 func (uc *UseCase) StartDrawing(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusDrawingPending)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusDrawingPending)
 }
 
 func (uc *UseCase) OpenInvitation(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusInvitationOpen)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusInvitationOpen)
 }
 
 func (uc *UseCase) CloseRegistration(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusRegistrationClosed)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusRegistrationClosed)
 }
 
 func (uc *UseCase) Cancel(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusCancelled)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusCancelled)
 }
 
-func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newStatus entity.EventStatus) error {
+func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newStatus definitions.EventStatus) error {
 	if id == uuid.Nil || userID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
 	}
@@ -5040,8 +5124,8 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 		return definitions.ErrInvalidEventState
 	}
 
-	// Добавляем участника через usecase (ВАЖНО)
-	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, entity.ParticipantRoleParticipant)
+	// Добавляем участника через usecase
+	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		return err
 	}
@@ -5696,6 +5780,7 @@ package usecase
 import (
 	"context"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
@@ -5716,7 +5801,7 @@ type EventUseCase interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
 	GetAll(ctx context.Context) ([]entity.Event, error)
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
-	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error
+	UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error
 	Delete(ctx context.Context, id uuid.UUID) error
 
 	OpenInvitation(ctx context.Context, id, userID uuid.UUID) error
@@ -5761,24 +5846,17 @@ type InvitationUseCase interface {
 	JoinByInvite(ctx context.Context, input dto.JoinByInvitationInput) error
 }
 
-// ====================== НОВОЕ: ЧАТ ======================
 type ChatRepository interface {
 	CreateMessage(ctx context.Context, msg entity.Message) error
 	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
 }
 
 type ChatUseCase interface {
-	// Чат «Кому я Санта» (я — giver)
 	GetRecipientChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error)
-
-	// Чат «Кто мой Санта» (я — receiver)
 	GetSenderChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error)
-
-	// Отправить сообщение (автоматически определяется пара)
 	SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error)
 }
 
-// ====================== НОВОЕ: AssignmentRepository (для чата) ======================
 type AssignmentRepository interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
 }

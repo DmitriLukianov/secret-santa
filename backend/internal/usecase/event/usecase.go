@@ -67,7 +67,7 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 	}
 
 	// 2. 🔥 Автоматически добавляем организатора как участника
-	organizerParticipant := entity.NewParticipant(event.ID, organizerID, entity.ParticipantRoleOrganizer)
+	organizerParticipant := entity.NewParticipant(event.ID, organizerID, definitions.ParticipantRoleOrganizer)
 	if err := uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create organizer as participant", slog.String("error", err.Error()))
@@ -84,7 +84,7 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 	return event, nil
 }
 
-// ====================== Остальные методы без изменений ======================
+// ====================== Остальные методы ======================
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	if id == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -130,7 +130,7 @@ func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEve
 	return nil
 }
 
-func (uc *UseCase) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.EventStatus) error {
+func (uc *UseCase) UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error {
 	if id == uuid.Nil {
 		return definitions.ErrInvalidUserInput
 	}
@@ -178,26 +178,26 @@ func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 func (uc *UseCase) Finish(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusFinished)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusFinished)
 }
 
 func (uc *UseCase) StartDrawing(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusDrawingPending)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusDrawingPending)
 }
 
 func (uc *UseCase) OpenInvitation(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusInvitationOpen)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusInvitationOpen)
 }
 
 func (uc *UseCase) CloseRegistration(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusRegistrationClosed)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusRegistrationClosed)
 }
 
 func (uc *UseCase) Cancel(ctx context.Context, id, userID uuid.UUID) error {
-	return uc.changeStatus(ctx, id, userID, entity.EventStatusCancelled)
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusCancelled)
 }
 
-func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newStatus entity.EventStatus) error {
+func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newStatus definitions.EventStatus) error {
 	if id == uuid.Nil || userID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
 	}

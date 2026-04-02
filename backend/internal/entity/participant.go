@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	// ← добавлен импорт
 )
 
 type Participant struct {
@@ -29,8 +30,3 @@ func NewParticipant(eventID, userID uuid.UUID, role string) Participant {
 		UpdatedAt: now,
 	}
 }
-
-const (
-	ParticipantRoleOrganizer   = "organizer"
-	ParticipantRoleParticipant = "participant"
-)

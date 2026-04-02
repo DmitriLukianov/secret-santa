@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
@@ -57,7 +58,7 @@ func (r *Repository) DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 }
 
 // FIXED: новая атомарная операция — вся жеребьёвка в одной транзакции
-func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus entity.EventStatus) error {
+func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -111,7 +112,7 @@ func (r *Repository) createTx(ctx context.Context, tx pgx.Tx, a entity.Assignmen
 	return err
 }
 
-func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, status entity.EventStatus) error {
+func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, status definitions.EventStatus) error {
 	// Используем тот же query-builder, что и в event repo (можно вынести в общий helper при желании)
 	// Здесь для минимальности используем прямой SQL
 	_, err := tx.Exec(ctx, `

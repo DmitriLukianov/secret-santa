@@ -97,8 +97,8 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 		return definitions.ErrInvalidEventState
 	}
 
-	// Добавляем участника через usecase (ВАЖНО)
-	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, entity.ParticipantRoleParticipant)
+	// Добавляем участника через usecase
+	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		return err
 	}

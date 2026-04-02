@@ -5,37 +5,24 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"secret-santa-backend/internal/definitions" // ← добавлен импорт
 )
-
-type EventStatus string
-
-const (
-	EventStatusDraft              EventStatus = "draft"               // Черновик (только организатор может редактировать)
-	EventStatusInvitationOpen     EventStatus = "invitation_open"     // Открыт набор участников по ссылке
-	EventStatusRegistrationClosed EventStatus = "registration_closed" // Набор участников закрыт
-	EventStatusDrawingPending     EventStatus = "drawing_pending"     // Готов к жеребьёвке
-	EventStatusDrawingDone        EventStatus = "drawing_done"        // Жеребьёвка проведена, назначения видны
-	EventStatusActive             EventStatus = "active"              // Игра идёт (можно отмечать отправку подарков)
-	EventStatusFinished           EventStatus = "finished"            // Событие завершено
-	EventStatusCancelled          EventStatus = "cancelled"           // Отменено
-)
-
-var ErrInvalidEventState = errors.New("invalid event state transition")
 
 type Event struct {
-	ID              uuid.UUID   `db:"id"`
-	Title           string      `db:"title"`
-	Description     *string     `db:"description"`
-	Rules           *string     `db:"rules"`
-	Recommendations *string     `db:"recommendations"`
-	OrganizerID     uuid.UUID   `db:"organizer_id"`
-	StartDate       time.Time   `db:"start_date"`
-	DrawDate        *time.Time  `db:"draw_date"`
-	EndDate         time.Time   `db:"end_date"`
-	Status          EventStatus `db:"status"`
-	MaxParticipants int         `db:"max_participants"`
-	CreatedAt       time.Time   `db:"created_at"`
-	UpdatedAt       time.Time   `db:"updated_at"`
+	ID              uuid.UUID               `db:"id"`
+	Title           string                  `db:"title"`
+	Description     *string                 `db:"description"`
+	Rules           *string                 `db:"rules"`
+	Recommendations *string                 `db:"recommendations"`
+	OrganizerID     uuid.UUID               `db:"organizer_id"`
+	StartDate       time.Time               `db:"start_date"`
+	DrawDate        *time.Time              `db:"draw_date"`
+	EndDate         time.Time               `db:"end_date"`
+	Status          definitions.EventStatus `db:"status"`
+	MaxParticipants int                     `db:"max_participants"`
+	CreatedAt       time.Time               `db:"created_at"`
+	UpdatedAt       time.Time               `db:"updated_at"`
 }
 
 // NewEvent создаёт событие в статусе draft
@@ -59,7 +46,7 @@ func NewEvent(
 		StartDate:       startDate,
 		DrawDate:        drawDate,
 		EndDate:         endDate,
-		Status:          EventStatusDraft,
+		Status:          definitions.EventStatusDraft,
 		MaxParticipants: maxParticipants,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -67,27 +54,27 @@ func NewEvent(
 }
 
 // CanTransitionTo — проверяет возможность перехода
-func (e Event) CanTransitionTo(newStatus EventStatus) bool {
+func (e Event) CanTransitionTo(newStatus definitions.EventStatus) bool {
 	switch e.Status {
-	case EventStatusDraft:
-		return newStatus == EventStatusInvitationOpen || newStatus == EventStatusCancelled
-	case EventStatusInvitationOpen:
-		return newStatus == EventStatusRegistrationClosed || newStatus == EventStatusCancelled
-	case EventStatusRegistrationClosed:
-		return newStatus == EventStatusDrawingPending || newStatus == EventStatusDrawingDone || newStatus == EventStatusCancelled // ← добавили drawing_done
-	case EventStatusDrawingPending:
-		return newStatus == EventStatusDrawingDone || newStatus == EventStatusCancelled
-	case EventStatusDrawingDone:
-		return newStatus == EventStatusActive || newStatus == EventStatusCancelled
-	case EventStatusActive:
-		return newStatus == EventStatusFinished || newStatus == EventStatusCancelled
+	case definitions.EventStatusDraft:
+		return newStatus == definitions.EventStatusInvitationOpen || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusInvitationOpen:
+		return newStatus == definitions.EventStatusRegistrationClosed || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusRegistrationClosed:
+		return newStatus == definitions.EventStatusDrawingPending || newStatus == definitions.EventStatusDrawingDone || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusDrawingPending:
+		return newStatus == definitions.EventStatusDrawingDone || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusDrawingDone:
+		return newStatus == definitions.EventStatusActive || newStatus == definitions.EventStatusCancelled
+	case definitions.EventStatusActive:
+		return newStatus == definitions.EventStatusFinished || newStatus == definitions.EventStatusCancelled
 	default:
 		return false
 	}
 }
 
 // TransitionTo — выполняет переход статуса с проверкой
-func (e *Event) TransitionTo(newStatus EventStatus) error {
+func (e *Event) TransitionTo(newStatus definitions.EventStatus) error {
 	if !e.CanTransitionTo(newStatus) {
 		return ErrInvalidEventState
 	}
@@ -99,17 +86,19 @@ func (e *Event) TransitionTo(newStatus EventStatus) error {
 // ====================== Вспомогательные методы ======================
 
 func (e Event) IsDrawable() bool {
-	return e.Status == EventStatusRegistrationClosed || e.Status == EventStatusDrawingPending
+	return e.Status == definitions.EventStatusRegistrationClosed || e.Status == definitions.EventStatusDrawingPending
 }
 
 func (e Event) CanAddParticipants() bool {
-	return e.Status == EventStatusDraft || e.Status == EventStatusInvitationOpen
+	return e.Status == definitions.EventStatusDraft || e.Status == definitions.EventStatusInvitationOpen
 }
 
 func (e Event) CanEdit() bool {
-	return e.Status != EventStatusFinished && e.Status != EventStatusCancelled
+	return e.Status != definitions.EventStatusFinished && e.Status != definitions.EventStatusCancelled
 }
 
 func (e Event) IsActive() bool {
-	return e.Status == EventStatusActive || e.Status == EventStatusDrawingDone
+	return e.Status == definitions.EventStatusActive || e.Status == definitions.EventStatusDrawingDone
 }
+
+var ErrInvalidEventState = errors.New("invalid event state transition")
