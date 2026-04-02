@@ -1,12 +1,13 @@
 -- +goose Down
 -- +goose StatementBegin
 
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS invitations;
 DROP TABLE IF EXISTS wishlist_items;
 DROP TABLE IF EXISTS wishlists;
 DROP TABLE IF EXISTS assignments;
 DROP TABLE IF EXISTS participants;
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS invitations;
-DROP TABLE IF EXISTS messages
+
 -- +goose StatementEnd

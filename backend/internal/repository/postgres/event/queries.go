@@ -23,6 +23,7 @@ func createEventQuery() squirrel.InsertBuilder {
 			"id", "title", "description", "rules", "recommendations",
 			"organizer_id", "start_date", "draw_date", "end_date",
 			"status", "max_participants",
+			"created_at", "updated_at",
 		)
 }
 
