@@ -10,7 +10,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -24,7 +24,7 @@ func NewChatHandler(uc usecase.ChatUseCase) *ChatHandler {
 
 // GetRecipientChat — чат «Кому я Санта»
 func (h *ChatHandler) GetRecipientChat(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -49,7 +49,7 @@ func (h *ChatHandler) GetRecipientChat(w http.ResponseWriter, r *http.Request) {
 
 // GetSenderChat — чат «Кто мой Санта»
 func (h *ChatHandler) GetSenderChat(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -74,7 +74,7 @@ func (h *ChatHandler) GetSenderChat(w http.ResponseWriter, r *http.Request) {
 
 // SendMessage — отправить сообщение
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -89,6 +89,10 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	var req request.SendMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}

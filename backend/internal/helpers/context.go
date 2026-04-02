@@ -4,17 +4,14 @@ import (
 	"fmt"
 	"net/http"
 
+	"secret-santa-backend/internal/definitions" // ← добавлен импорт
+
 	"github.com/google/uuid"
 )
 
-type contextKey string
-
-const UserIDKey contextKey = "user_id"
-
 // GetUserID — типизированный доступ к userID из контекста
-// (используется во всех handler'ах)
 func GetUserID(r *http.Request) (uuid.UUID, error) {
-	val := r.Context().Value(UserIDKey)
+	val := r.Context().Value(definitions.UserIDKey)
 	if val == nil {
 		return uuid.Nil, fmt.Errorf("user id not found in context")
 	}

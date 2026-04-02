@@ -11,7 +11,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -31,6 +31,11 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req request.CreateUserRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
@@ -109,6 +114,10 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	input := dto.UpdateUserInput{
 		Name:  req.Name,
@@ -142,7 +151,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) GetMyEvents(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return

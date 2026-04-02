@@ -12,7 +12,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -27,7 +27,7 @@ func NewEventHandler(uc usecase.EventUseCase) *EventHandler {
 // ==================== CRUD ====================
 
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -35,6 +35,10 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	var req request.CreateEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
@@ -103,6 +107,10 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	input := dto.UpdateEventInput{
 		Title:           req.Title,
@@ -166,7 +174,7 @@ func (h *EventHandler) changeStatus(
 	r *http.Request,
 	action func(ctx context.Context, id, userID uuid.UUID) error,
 ) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return

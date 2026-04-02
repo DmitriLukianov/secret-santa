@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/controller/http/middleware"
 	"secret-santa-backend/internal/oauth"
 )
 

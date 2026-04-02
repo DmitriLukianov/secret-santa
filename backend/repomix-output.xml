@@ -51,6 +51,10 @@ internal/
     config.go
   controller/
     http/
+      middleware/
+        auth.go
+        recovery.go
+        timeout.go
       v1/
         request/
           chat.go
@@ -96,12 +100,12 @@ internal/
     participant.go
     user.go
     wishlist.go
+  helpers/
+    context.go
+    ptr.go
+    validator.go
   logger/
     logger.go
-  middleware/
-    auth.go
-    recovery.go
-    timeout.go
   oauth/
     github.go
     jwt.go
@@ -390,6 +394,103 @@ func parseDuration(s string) time.Duration {
 		return 24 * time.Hour
 	}
 	return d
+}
+</file>
+
+<file path="internal/controller/http/middleware/auth.go">
+package middleware
+
+import (
+	"context"
+	"log/slog"
+	"net/http"
+	"strings"
+
+	"secret-santa-backend/internal/definitions" // ← добавлен импорт
+	auth "secret-santa-backend/internal/oauth"
+
+	"github.com/google/uuid"
+)
+
+type AuthMiddleware struct {
+	jwtManager *auth.JWTManager
+	log        *slog.Logger
+}
+
+func NewAuthMiddleware(jwtManager *auth.JWTManager, log *slog.Logger) *AuthMiddleware {
+	return &AuthMiddleware{jwtManager: jwtManager, log: log}
+}
+
+func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "missing authorization header", http.StatusUnauthorized)
+			return
+		}
+
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenStr == authHeader {
+			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
+			return
+		}
+
+		claims, err := m.jwtManager.ParseToken(tokenStr)
+		if err != nil {
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		userID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			http.Error(w, "invalid user id in token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), definitions.UserIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+</file>
+
+<file path="internal/controller/http/middleware/recovery.go">
+package middleware
+
+import (
+	"fmt"
+	"net/http"
+
+	"secret-santa-backend/internal/controller/http/v1/response"
+)
+
+// RecoveryMiddleware — защищает от panic
+func RecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				err := fmt.Errorf("panic: %v", rec)
+				response.WriteHTTPError(w, err)
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+</file>
+
+<file path="internal/controller/http/middleware/timeout.go">
+package middleware
+
+import (
+	"net/http"
+	"time"
+)
+
+// TimeoutMiddleware — ограничивает время запроса
+func TimeoutMiddleware(timeout time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.TimeoutHandler(next, timeout, "request timeout")
+	}
 }
 </file>
 
@@ -895,7 +996,7 @@ import (
 
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -908,7 +1009,7 @@ func NewAssignmentHandler(uc usecase.AssignmentUseCase) *AssignmentHandler {
 }
 
 func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -934,7 +1035,7 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1057,7 +1158,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -1071,7 +1172,7 @@ func NewChatHandler(uc usecase.ChatUseCase) *ChatHandler {
 
 // GetRecipientChat — чат «Кому я Санта»
 func (h *ChatHandler) GetRecipientChat(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1096,7 +1197,7 @@ func (h *ChatHandler) GetRecipientChat(w http.ResponseWriter, r *http.Request) {
 
 // GetSenderChat — чат «Кто мой Санта»
 func (h *ChatHandler) GetSenderChat(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1121,7 +1222,7 @@ func (h *ChatHandler) GetSenderChat(w http.ResponseWriter, r *http.Request) {
 
 // SendMessage — отправить сообщение
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1136,6 +1237,10 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	var req request.SendMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
@@ -1167,7 +1272,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -1182,7 +1287,7 @@ func NewEventHandler(uc usecase.EventUseCase) *EventHandler {
 // ==================== CRUD ====================
 
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1190,6 +1295,10 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	var req request.CreateEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
@@ -1258,6 +1367,10 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	input := dto.UpdateEventInput{
 		Title:           req.Title,
@@ -1321,7 +1434,7 @@ func (h *EventHandler) changeStatus(
 	r *http.Request,
 	action func(ctx context.Context, id, userID uuid.UUID) error,
 ) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1357,7 +1470,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -1371,7 +1484,7 @@ func NewInvitationHandler(uc usecase.InvitationUseCase) *InvitationHandler {
 
 // GenerateInvite — только для организатора
 func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1379,6 +1492,10 @@ func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Reques
 
 	var req request.CreateInvitationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
@@ -1417,9 +1534,13 @@ func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request)
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	// Получаем userID из токена
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrUnauthorized)
 		return
@@ -1455,7 +1576,7 @@ import (
 
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -1475,7 +1596,7 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1576,7 +1697,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/controller/http/middleware"
 	"secret-santa-backend/internal/oauth"
 )
 
@@ -1689,7 +1810,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -1709,6 +1830,11 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req request.CreateUserRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
@@ -1787,6 +1913,10 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	input := dto.UpdateUserInput{
 		Name:  req.Name,
@@ -1820,7 +1950,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) GetMyEvents(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1869,7 +1999,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -1887,7 +2017,7 @@ func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.Partic
 
 // Create — создание вишлиста
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1931,7 +2061,7 @@ func (h *WishlistHandler) GetByParticipant(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -1971,6 +2101,10 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	item, err := h.uc.AddItem(
 		r.Context(),
@@ -1992,7 +2126,7 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 
 // GetByUser — теперь правильно получает СВОЙ вишлист (для владельца)
 func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -2065,6 +2199,10 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	item, err := h.uc.UpdateItem(r.Context(), itemID, req.Title, &req.Link, &req.ImageURL, &req.Comment)
 	if err != nil {
@@ -2076,7 +2214,6 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.WishlistItemToResponse(&item))
 }
 
-// DeleteItem — удаление товара (исправлена неиспользуемая переменная)
 // DeleteItem — удаление товара
 func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	itemIDStr := chi.URLParam(r, "itemId")
@@ -2150,6 +2287,13 @@ const (
 	WishlistVisibilityPublic    = "public"
 	WishlistVisibilityFriends   = "friends"
 	WishlistVisibilitySantaOnly = "santa_only"
+)
+
+// ====================== CONTEXT KEYS ======================
+type contextKey string
+
+const (
+	UserIDKey contextKey = "user_id"
 )
 </file>
 
@@ -2361,12 +2505,11 @@ func NewAssignment(eventID, giverID, receiverID uuid.UUID) Assignment {
 package entity
 
 import (
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
 
-	"secret-santa-backend/internal/definitions" // ← добавлен импорт
+	"secret-santa-backend/internal/definitions"
 )
 
 type Event struct {
@@ -2436,7 +2579,7 @@ func (e Event) CanTransitionTo(newStatus definitions.EventStatus) bool {
 // TransitionTo — выполняет переход статуса с проверкой
 func (e *Event) TransitionTo(newStatus definitions.EventStatus) error {
 	if !e.CanTransitionTo(newStatus) {
-		return ErrInvalidEventState
+		return definitions.ErrInvalidEventState // ← используем из definitions
 	}
 	e.Status = newStatus
 	e.UpdatedAt = time.Now()
@@ -2460,8 +2603,6 @@ func (e Event) CanEdit() bool {
 func (e Event) IsActive() bool {
 	return e.Status == definitions.EventStatusActive || e.Status == definitions.EventStatusDrawingDone
 }
-
-var ErrInvalidEventState = errors.New("invalid event state transition")
 </file>
 
 <file path="internal/entity/invitation.go">
@@ -2656,6 +2797,64 @@ func NewWishlistItem(wishlistID uuid.UUID, title string, link, imageURL, comment
 }
 </file>
 
+<file path="internal/helpers/context.go">
+package helpers
+
+import (
+	"fmt"
+	"net/http"
+
+	"secret-santa-backend/internal/definitions" // ← добавлен импорт
+
+	"github.com/google/uuid"
+)
+
+// GetUserID — типизированный доступ к userID из контекста
+func GetUserID(r *http.Request) (uuid.UUID, error) {
+	val := r.Context().Value(definitions.UserIDKey)
+	if val == nil {
+		return uuid.Nil, fmt.Errorf("user id not found in context")
+	}
+
+	id, ok := val.(uuid.UUID)
+	if !ok {
+		return uuid.Nil, fmt.Errorf("invalid user id type in context")
+	}
+
+	return id, nil
+}
+</file>
+
+<file path="internal/helpers/ptr.go">
+package helpers
+
+// ToPtr возвращает указатель на значение
+func ToPtr[T any](v T) *T {
+	return &v
+}
+
+// FromPtr возвращает значение по указателю или значение по умолчанию
+func FromPtr[T any](v *T) T {
+	if v == nil {
+		var zero T
+		return zero
+	}
+	return *v
+}
+</file>
+
+<file path="internal/helpers/validator.go">
+package helpers
+
+import "github.com/go-playground/validator/v10"
+
+var Validate = validator.New()
+
+func ValidateStruct(s interface{}) error {
+	return Validate.Struct(s)
+}
+</file>
+
 <file path="internal/logger/logger.go">
 package logger
 
@@ -2705,122 +2904,6 @@ func parseLevel(level string) slog.Level {
 		return slog.LevelError
 	default:
 		return slog.LevelInfo
-	}
-}
-</file>
-
-<file path="internal/middleware/auth.go">
-package middleware
-
-import (
-	"context"
-	"fmt"
-	"log/slog"
-	"net/http"
-	"strings"
-
-	auth "secret-santa-backend/internal/oauth"
-
-	"github.com/google/uuid"
-)
-
-type contextKey string
-
-const UserIDKey contextKey = "user_id"
-
-type AuthMiddleware struct {
-	jwtManager *auth.JWTManager
-	log        *slog.Logger
-}
-
-func NewAuthMiddleware(jwtManager *auth.JWTManager, log *slog.Logger) *AuthMiddleware {
-	return &AuthMiddleware{jwtManager: jwtManager, log: log}
-}
-
-func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "missing authorization header", http.StatusUnauthorized)
-			return
-		}
-
-		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenStr == authHeader {
-			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
-			return
-		}
-
-		claims, err := m.jwtManager.ParseToken(tokenStr)
-		if err != nil {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		userID, err := uuid.Parse(claims.UserID)
-		if err != nil {
-			http.Error(w, "invalid user id in token", http.StatusUnauthorized)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), UserIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-// ✅ FIX: безопасный GetUserID
-func GetUserID(r *http.Request) (uuid.UUID, error) {
-	val := r.Context().Value(UserIDKey)
-	if val == nil {
-		return uuid.Nil, fmt.Errorf("user id not found in context")
-	}
-
-	id, ok := val.(uuid.UUID)
-	if !ok {
-		return uuid.Nil, fmt.Errorf("invalid user id type in context")
-	}
-
-	return id, nil
-}
-</file>
-
-<file path="internal/middleware/recovery.go">
-package middleware
-
-import (
-	"fmt"
-	"net/http"
-
-	"secret-santa-backend/internal/controller/http/v1/response"
-)
-
-// RecoveryMiddleware — защищает от panic
-func RecoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				err := fmt.Errorf("panic: %v", rec)
-				response.WriteHTTPError(w, err)
-			}
-		}()
-
-		next.ServeHTTP(w, r)
-	})
-}
-</file>
-
-<file path="internal/middleware/timeout.go">
-package middleware
-
-import (
-	"net/http"
-	"time"
-)
-
-// TimeoutMiddleware — ограничивает время запроса
-func TimeoutMiddleware(timeout time.Duration) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.TimeoutHandler(next, timeout, "request timeout")
 	}
 }
 </file>
@@ -6182,13 +6265,21 @@ require (
 )
 
 require (
+	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
+	github.com/go-playground/locales v0.14.1 // indirect
+	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/validator v9.31.0+incompatible // indirect
+	github.com/go-playground/validator/v10 v10.30.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/text v0.29.0 // indirect
+	github.com/leodido/go-urn v1.4.0 // indirect
+	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
 )
 </file>
 

@@ -2,19 +2,15 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"secret-santa-backend/internal/definitions" // ← добавлен импорт
 	auth "secret-santa-backend/internal/oauth"
 
 	"github.com/google/uuid"
 )
-
-type contextKey string
-
-const UserIDKey contextKey = "user_id"
 
 type AuthMiddleware struct {
 	jwtManager *auth.JWTManager
@@ -51,22 +47,7 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+		ctx := context.WithValue(r.Context(), definitions.UserIDKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-// ✅ FIX: безопасный GetUserID
-func GetUserID(r *http.Request) (uuid.UUID, error) {
-	val := r.Context().Value(UserIDKey)
-	if val == nil {
-		return uuid.Nil, fmt.Errorf("user id not found in context")
-	}
-
-	id, ok := val.(uuid.UUID)
-	if !ok {
-		return uuid.Nil, fmt.Errorf("invalid user id type in context")
-	}
-
-	return id, nil
 }

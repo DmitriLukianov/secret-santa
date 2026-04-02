@@ -1,12 +1,11 @@
 package entity
 
 import (
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
 
-	"secret-santa-backend/internal/definitions" // ← добавлен импорт
+	"secret-santa-backend/internal/definitions"
 )
 
 type Event struct {
@@ -76,7 +75,7 @@ func (e Event) CanTransitionTo(newStatus definitions.EventStatus) bool {
 // TransitionTo — выполняет переход статуса с проверкой
 func (e *Event) TransitionTo(newStatus definitions.EventStatus) error {
 	if !e.CanTransitionTo(newStatus) {
-		return ErrInvalidEventState
+		return definitions.ErrInvalidEventState // ← используем из definitions
 	}
 	e.Status = newStatus
 	e.UpdatedAt = time.Now()
@@ -100,5 +99,3 @@ func (e Event) CanEdit() bool {
 func (e Event) IsActive() bool {
 	return e.Status == definitions.EventStatusActive || e.Status == definitions.EventStatusDrawingDone
 }
-
-var ErrInvalidEventState = errors.New("invalid event state transition")

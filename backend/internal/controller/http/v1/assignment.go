@@ -9,7 +9,7 @@ import (
 
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -22,7 +22,7 @@ func NewAssignmentHandler(uc usecase.AssignmentUseCase) *AssignmentHandler {
 }
 
 func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -48,7 +48,7 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return

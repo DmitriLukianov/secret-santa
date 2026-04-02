@@ -9,7 +9,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -23,7 +23,7 @@ func NewInvitationHandler(uc usecase.InvitationUseCase) *InvitationHandler {
 
 // GenerateInvite — только для организатора
 func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -31,6 +31,10 @@ func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Reques
 
 	var req request.CreateInvitationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
@@ -69,9 +73,13 @@ func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request)
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	// Получаем userID из токена
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrUnauthorized)
 		return

@@ -10,7 +10,7 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
-	"secret-santa-backend/internal/middleware"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
 )
 
@@ -28,7 +28,7 @@ func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.Partic
 
 // Create — создание вишлиста
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -36,6 +36,10 @@ func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var req request.CreateWishlistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
@@ -72,7 +76,7 @@ func (h *WishlistHandler) GetByParticipant(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -112,6 +116,10 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	item, err := h.uc.AddItem(
 		r.Context(),
@@ -133,7 +141,7 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 
 // GetByUser — теперь правильно получает СВОЙ вишлист (для владельца)
 func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r)
+	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -206,6 +214,10 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
 
 	item, err := h.uc.UpdateItem(r.Context(), itemID, req.Title, &req.Link, &req.ImageURL, &req.Comment)
 	if err != nil {
@@ -217,7 +229,6 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.WishlistItemToResponse(&item))
 }
 
-// DeleteItem — удаление товара (исправлена неиспользуемая переменная)
 // DeleteItem — удаление товара
 func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	itemIDStr := chi.URLParam(r, "itemId")

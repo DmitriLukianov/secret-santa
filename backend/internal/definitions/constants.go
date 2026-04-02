@@ -26,3 +26,10 @@ const (
 	WishlistVisibilityFriends   = "friends"
 	WishlistVisibilitySantaOnly = "santa_only"
 )
+
+// ====================== CONTEXT KEYS ======================
+type contextKey string
+
+const (
+	UserIDKey contextKey = "user_id"
+)
