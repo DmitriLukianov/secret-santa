@@ -9,7 +9,7 @@ import (
 )
 
 type Repository interface {
-	Create(ctx context.Context, participant entity.Participant) error
+	Create(ctx context.Context, participant entity.Participant) (entity.Participant, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
 	UpdateGiftSent(ctx context.Context, id uuid.UUID, sent bool) error

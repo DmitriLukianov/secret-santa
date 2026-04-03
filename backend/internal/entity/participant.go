@@ -18,14 +18,10 @@ type Participant struct {
 }
 
 func NewParticipant(eventID, userID uuid.UUID, role string) Participant {
-	now := time.Now()
 	return Participant{
-		ID:        uuid.New(),
-		EventID:   eventID,
-		UserID:    userID,
-		Role:      role,
-		GiftSent:  false,
-		CreatedAt: now,
-		UpdatedAt: now,
+		EventID:  eventID,
+		UserID:   userID,
+		Role:     role,
+		GiftSent: false,
 	}
 }

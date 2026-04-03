@@ -6,7 +6,6 @@ import (
 
 	"secret-santa-backend/internal/entity"
 
-	"github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,16 +18,24 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, p entity.Participant) error {
-	query := createParticipantQuery().
-		Values(p.ID, p.EventID, p.UserID, p.Role, p.GiftSent, p.CreatedAt, p.UpdatedAt)
+// Create теперь возвращает полностью заполненную сущность из БД
+func (r *Repository) Create(ctx context.Context, p entity.Participant) (entity.Participant, error) {
+	query, args, err := createParticipantQuery().
+		Values(p.EventID, p.UserID, p.Role, p.GiftSent).
+		Suffix("RETURNING id, event_id, user_id, role, gift_sent, gift_sent_at, created_at, updated_at").
+		ToSql()
 
-	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.Participant{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, query, args...)
+	returned, err := scanParticipant(row)
+	if err != nil {
+		return entity.Participant{}, err
+	}
+
+	return *returned, nil
 }
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error) {
@@ -57,18 +64,13 @@ func (r *Repository) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entit
 }
 
 func (r *Repository) UpdateGiftSent(ctx context.Context, id uuid.UUID, sent bool) error {
-	query := qb.Update("participants").
-		Set("gift_sent", sent).
-		Set("updated_at", squirrel.Expr("NOW()"))
-	if sent {
-		query = query.Set("gift_sent_at", squirrel.Expr("NOW()"))
-	}
-
-	sql, args, err := query.Where(squirrel.Eq{"id": id}).ToSql()
-	if err != nil {
-		return err
-	}
-	_, err = r.db.Exec(ctx, sql, args...)
+	_, err := r.db.Exec(ctx, `
+		UPDATE participants 
+		SET gift_sent = $1, 
+		    gift_sent_at = CASE WHEN $1 THEN NOW() ELSE NULL END,
+		    updated_at = NOW()
+		WHERE id = $2`,
+		sent, id)
 	return err
 }
 

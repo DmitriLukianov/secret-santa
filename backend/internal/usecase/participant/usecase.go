@@ -39,7 +39,9 @@ func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role s
 
 	participant := entity.NewParticipant(eventID, userID, role)
 
-	if err := uc.repo.Create(ctx, participant); err != nil {
+	// Теперь получаем полностью заполненный объект из БД
+	createdParticipant, err := uc.repo.Create(ctx, participant)
+	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create participant", slog.String("error", err.Error()))
 		}
@@ -53,11 +55,11 @@ func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role s
 
 	if uc.log != nil {
 		uc.log.Info("participant created successfully",
-			slog.String("participant_id", participant.ID.String()),
+			slog.String("participant_id", createdParticipant.ID.String()),
 		)
 	}
 
-	return participant, nil
+	return createdParticipant, nil
 }
 
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error) {

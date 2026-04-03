@@ -73,14 +73,14 @@ func ParticipantToResponse(p *entity.Participant) ParticipantResponse {
 	}
 }
 
-func ParticipantsToResponse(participants []*entity.Participant) []ParticipantResponse {
+func ParticipantsToResponse(participants []entity.Participant) []ParticipantResponse {
 	if participants == nil {
 		return nil
 	}
 
 	resp := make([]ParticipantResponse, len(participants))
-	for i, p := range participants {
-		resp[i] = ParticipantToResponse(p)
+	for i := range participants {
+		resp[i] = ParticipantToResponse(&participants[i])
 	}
 	return resp
 }

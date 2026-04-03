@@ -35,24 +35,16 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Теперь Create возвращает полностью заполненный объект из БД
 	participant, err := h.uc.Create(r.Context(), eventID, userID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
 
-	resp := response.ParticipantResponse{
-		ID:        participant.ID.String(),
-		EventID:   participant.EventID.String(),
-		UserID:    participant.UserID.String(),
-		Role:      participant.Role,
-		GiftSent:  participant.GiftSent,
-		CreatedAt: participant.CreatedAt,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.ParticipantToResponse(&participant))
 }
 
 func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
@@ -69,20 +61,8 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var resp []response.ParticipantResponse
-	for _, p := range participants {
-		resp = append(resp, response.ParticipantResponse{
-			ID:        p.ID.String(),
-			EventID:   p.EventID.String(),
-			UserID:    p.UserID.String(),
-			Role:      p.Role,
-			GiftSent:  p.GiftSent,
-			CreatedAt: p.CreatedAt,
-		})
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.ParticipantsToResponse(participants))
 }
 
 func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request) {
@@ -93,8 +73,7 @@ func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err = h.uc.MarkGiftSent(r.Context(), id)
-	if err != nil {
+	if err := h.uc.MarkGiftSent(r.Context(), id); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
@@ -110,8 +89,7 @@ func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.uc.Delete(r.Context(), id)
-	if err != nil {
+	if err := h.uc.Delete(r.Context(), id); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
