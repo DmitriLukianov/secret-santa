@@ -715,7 +715,6 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 package response
 
 import (
-	"secret-santa-backend/internal/entity"
 	"time"
 )
 
@@ -733,24 +732,6 @@ type EventResponse struct {
 	MaxParticipants int        `json:"maxParticipants"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
-}
-
-func EventResponseFromEntity(e entity.Event) EventResponse {
-	return EventResponse{
-		ID:              e.ID.String(),
-		Title:           e.Title,
-		Description:     e.Description,
-		Rules:           e.Rules,
-		Recommendations: e.Recommendations,
-		OrganizerID:     e.OrganizerID.String(),
-		StartDate:       e.StartDate,
-		DrawDate:        e.DrawDate,
-		EndDate:         e.EndDate,
-		Status:          string(e.Status),
-		MaxParticipants: e.MaxParticipants,
-		CreatedAt:       e.CreatedAt,
-		UpdatedAt:       e.UpdatedAt,
-	}
 }
 </file>
 
@@ -2469,6 +2450,7 @@ import (
 	"secret-santa-backend/internal/definitions"
 )
 
+// Event — доменная сущность события "Тайный Санта"
 type Event struct {
 	ID              uuid.UUID               `db:"id"`
 	Title           string                  `db:"title"`
@@ -2485,6 +2467,8 @@ type Event struct {
 	UpdatedAt       time.Time               `db:"updated_at"`
 }
 
+// NewEvent создаёт новую сущность события.
+// ID, CreatedAt и UpdatedAt оставляем нулевыми — их заполнит БД.
 func NewEvent(
 	title string,
 	organizerID uuid.UUID,
@@ -2493,10 +2477,7 @@ func NewEvent(
 	drawDate *time.Time,
 	maxParticipants int,
 ) Event {
-	now := time.Now()
-
 	return Event{
-		ID:              uuid.New(),
 		Title:           title,
 		Description:     description,
 		Rules:           rules,
@@ -2507,8 +2488,7 @@ func NewEvent(
 		EndDate:         endDate,
 		Status:          definitions.EventStatusDraft,
 		MaxParticipants: maxParticipants,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		// ID, CreatedAt, UpdatedAt будут заполнены БД
 	}
 }
 
@@ -3433,6 +3413,7 @@ import "github.com/Masterminds/squirrel"
 
 var psql = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
+// getEventQuery — базовый SELECT для всех запросов по событиям
 func getEventQuery() squirrel.SelectBuilder {
 	return psql.Select(
 		"id", "title", "description", "rules", "recommendations",
@@ -3446,6 +3427,7 @@ func listEventsQuery() squirrel.SelectBuilder {
 	return getEventQuery()
 }
 
+// createEventQuery — INSERT с RETURNING (чтобы вернуть полные данные из БД)
 func createEventQuery() squirrel.InsertBuilder {
 	return psql.Insert("events").
 		Columns(
@@ -3464,14 +3446,11 @@ func deleteEventQuery() squirrel.DeleteBuilder {
 	return psql.Delete("events")
 }
 
+// getEventsForUserQuery — базовый builder без WHERE (WHERE добавляется в repo)
 func getEventsForUserQuery() squirrel.SelectBuilder {
 	return getEventQuery().
 		Distinct().
 		LeftJoin("participants p ON events.id = p.event_id").
-		Where(squirrel.Or{
-			squirrel.Eq{"events.organizer_id": "?"},
-			squirrel.Eq{"p.user_id": "?"},
-		}).
 		OrderBy("events.created_at DESC")
 }
 </file>
@@ -3486,7 +3465,6 @@ import (
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
-	"github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -3499,7 +3477,8 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, e entity.Event) error {
+// Create создаёт событие и возвращает полностью заполненную сущность из БД
+func (r *Repository) Create(ctx context.Context, e entity.Event) (entity.Event, error) {
 	query, args, err := createEventQuery().
 		Values(
 			e.ID,
@@ -3516,13 +3495,21 @@ func (r *Repository) Create(ctx context.Context, e entity.Event) error {
 			e.CreatedAt,
 			e.UpdatedAt,
 		).
+		Suffix("RETURNING id, title, description, rules, recommendations, organizer_id, " +
+			"start_date, draw_date, end_date, status, max_participants, created_at, updated_at").
 		ToSql()
+
 	if err != nil {
-		return err
+		return entity.Event{}, err
 	}
 
-	_, err = r.db.Exec(ctx, query, args...)
-	return err
+	row := r.db.QueryRow(ctx, query, args...)
+	returnedEvent, err := ScanEvent(row)
+	if err != nil {
+		return entity.Event{}, err
+	}
+
+	return *returnedEvent, nil
 }
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
@@ -3617,10 +3604,7 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 
 func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
 	query, args, err := getEventsForUserQuery().
-		Where(squirrel.Or{
-			squirrel.Eq{"events.organizer_id": userID},
-			squirrel.Eq{"p.user_id": userID},
-		}).
+		Where("events.organizer_id = ? OR p.user_id = ?", userID, userID).
 		ToSql()
 	if err != nil {
 		return nil, err
@@ -4820,7 +4804,9 @@ import (
 )
 
 type Repository interface {
-	Create(ctx context.Context, event entity.Event) error
+	// Create теперь возвращает полностью заполненное событие из БД
+	Create(ctx context.Context, event entity.Event) (entity.Event, error)
+
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
 	GetAll(ctx context.Context) ([]entity.Event, error)
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
@@ -4890,15 +4876,17 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		input.MaxParticipants,
 	)
 
-	// 1. Создаём событие
-	if err := uc.repo.Create(ctx, event); err != nil {
+	// 1. Создаём событие (теперь возвращаем полные данные из БД)
+	createdEvent, err := uc.repo.Create(ctx, event)
+	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create event", slog.String("error", err.Error()))
 		}
 		return entity.Event{}, fmt.Errorf("%w: %w", definitions.ErrConflict, err)
 	}
 
-	organizerParticipant := entity.NewParticipant(event.ID, organizerID, definitions.ParticipantRoleOrganizer)
+	// 2. Создаём участника-организатора
+	organizerParticipant := entity.NewParticipant(createdEvent.ID, organizerID, definitions.ParticipantRoleOrganizer)
 	if err := uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create organizer as participant", slog.String("error", err.Error()))
@@ -4908,11 +4896,12 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 
 	if uc.log != nil {
 		uc.log.Info("event created successfully with organizer as participant",
-			slog.String("event_id", event.ID.String()),
+			slog.String("event_id", createdEvent.ID.String()),
 			slog.String("participant_id", organizerParticipant.ID.String()),
 		)
 	}
-	return event, nil
+
+	return createdEvent, nil
 }
 
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {

@@ -57,15 +57,17 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		input.MaxParticipants,
 	)
 
-	// 1. Создаём событие
-	if err := uc.repo.Create(ctx, event); err != nil {
+	// 1. Создаём событие (теперь возвращаем полные данные из БД)
+	createdEvent, err := uc.repo.Create(ctx, event)
+	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create event", slog.String("error", err.Error()))
 		}
 		return entity.Event{}, fmt.Errorf("%w: %w", definitions.ErrConflict, err)
 	}
 
-	organizerParticipant := entity.NewParticipant(event.ID, organizerID, definitions.ParticipantRoleOrganizer)
+	// 2. Создаём участника-организатора
+	organizerParticipant := entity.NewParticipant(createdEvent.ID, organizerID, definitions.ParticipantRoleOrganizer)
 	if err := uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create organizer as participant", slog.String("error", err.Error()))
@@ -75,11 +77,12 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 
 	if uc.log != nil {
 		uc.log.Info("event created successfully with organizer as participant",
-			slog.String("event_id", event.ID.String()),
+			slog.String("event_id", createdEvent.ID.String()),
 			slog.String("participant_id", organizerParticipant.ID.String()),
 		)
 	}
-	return event, nil
+
+	return createdEvent, nil
 }
 
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {

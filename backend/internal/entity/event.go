@@ -8,6 +8,7 @@ import (
 	"secret-santa-backend/internal/definitions"
 )
 
+// Event — доменная сущность события "Тайный Санта"
 type Event struct {
 	ID              uuid.UUID               `db:"id"`
 	Title           string                  `db:"title"`
@@ -24,6 +25,8 @@ type Event struct {
 	UpdatedAt       time.Time               `db:"updated_at"`
 }
 
+// NewEvent создаёт новую сущность события.
+// ID, CreatedAt и UpdatedAt оставляем нулевыми — их заполнит БД.
 func NewEvent(
 	title string,
 	organizerID uuid.UUID,
@@ -32,10 +35,7 @@ func NewEvent(
 	drawDate *time.Time,
 	maxParticipants int,
 ) Event {
-	now := time.Now()
-
 	return Event{
-		ID:              uuid.New(),
 		Title:           title,
 		Description:     description,
 		Rules:           rules,
@@ -46,8 +46,7 @@ func NewEvent(
 		EndDate:         endDate,
 		Status:          definitions.EventStatusDraft,
 		MaxParticipants: maxParticipants,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		// ID, CreatedAt, UpdatedAt будут заполнены БД
 	}
 }
 

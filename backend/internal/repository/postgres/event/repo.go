@@ -7,7 +7,6 @@ import (
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
-	"github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -20,10 +19,10 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, e entity.Event) error {
+// Create — теперь правильно не передаёт id/created_at/updated_at
+func (r *Repository) Create(ctx context.Context, e entity.Event) (entity.Event, error) {
 	query, args, err := createEventQuery().
 		Values(
-			e.ID,
 			e.Title,
 			e.Description,
 			e.Rules,
@@ -34,18 +33,25 @@ func (r *Repository) Create(ctx context.Context, e entity.Event) error {
 			e.EndDate,
 			e.Status,
 			e.MaxParticipants,
-			e.CreatedAt,
-			e.UpdatedAt,
 		).
+		Suffix("RETURNING id, title, description, rules, recommendations, organizer_id, " +
+			"start_date, draw_date, end_date, status, max_participants, created_at, updated_at").
 		ToSql()
+
 	if err != nil {
-		return err
+		return entity.Event{}, err
 	}
 
-	_, err = r.db.Exec(ctx, query, args...)
-	return err
+	row := r.db.QueryRow(ctx, query, args...)
+	returnedEvent, err := ScanEvent(row)
+	if err != nil {
+		return entity.Event{}, err
+	}
+
+	return *returnedEvent, nil
 }
 
+// Остальные методы без изменений
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	query, args, err := getEventQuery().
 		Where("id = ?", id).
@@ -53,7 +59,6 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, 
 	if err != nil {
 		return nil, err
 	}
-
 	row := r.db.QueryRow(ctx, query, args...)
 	return ScanEvent(row)
 }
@@ -63,13 +68,11 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	return ScanEvents(rows)
 }
 
@@ -119,7 +122,6 @@ func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status defi
 	if err != nil {
 		return err
 	}
-
 	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
@@ -131,27 +133,21 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-
 	_, err = r.db.Exec(ctx, query, args...)
 	return err
 }
 
 func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
 	query, args, err := getEventsForUserQuery().
-		Where(squirrel.Or{
-			squirrel.Eq{"events.organizer_id": userID},
-			squirrel.Eq{"p.user_id": userID},
-		}).
+		Where("events.organizer_id = ? OR p.user_id = ?", userID, userID).
 		ToSql()
 	if err != nil {
 		return nil, err
 	}
-
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	return ScanEvents(rows)
 }
