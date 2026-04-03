@@ -8,23 +8,21 @@ import (
 	"secret-santa-backend/internal/definitions"
 )
 
-// ErrorResponse — единый формат ошибки для всего API
 type ErrorResponse struct {
 	Error string `json:"error"`
 	Code  int    `json:"code"`
 }
 
-// WriteHTTPError — централизованная обработка ошибок
 func WriteHTTPError(w http.ResponseWriter, err error) {
 	if err == nil {
 		return
 	}
 
 	status := http.StatusInternalServerError
-	message := "internal server error" // по умолчанию безопасное сообщение
+	message := "internal server error"
 
 	switch {
-	// ==================== 404 ====================
+
 	case errors.Is(err, definitions.ErrNotFound),
 		errors.Is(err, definitions.ErrEventNotFound),
 		errors.Is(err, definitions.ErrWishlistNotFound),
@@ -34,7 +32,6 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 		message = err.Error()
 
-	// ==================== 403 ====================
 	case errors.Is(err, definitions.ErrForbidden),
 		errors.Is(err, definitions.ErrNotOrganizer),
 		errors.Is(err, definitions.ErrNotSanta),
@@ -42,7 +39,6 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		status = http.StatusForbidden
 		message = err.Error()
 
-	// ==================== 409 ====================
 	case errors.Is(err, definitions.ErrConflict),
 		errors.Is(err, definitions.ErrAlreadyParticipating),
 		errors.Is(err, definitions.ErrDuplicateParticipant),
@@ -50,7 +46,6 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 		message = err.Error()
 
-	// ==================== 400 ====================
 	case errors.Is(err, definitions.ErrInvalidUUID),
 		errors.Is(err, definitions.ErrInvalidOAuthCode),
 		errors.Is(err, definitions.ErrMissingOAuthCode),
@@ -62,9 +57,8 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 		message = err.Error()
 
-	// ==================== fallback ====================
 	default:
-		// логично НЕ отдавать внутренние ошибки клиенту
+
 		status = http.StatusInternalServerError
 	}
 
@@ -79,7 +73,7 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 		Error: message,
 		Code:  status,
 	}); err != nil {
-		// fallback — если даже encode упал
+
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }

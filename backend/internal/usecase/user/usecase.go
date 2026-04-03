@@ -24,7 +24,6 @@ func NewWithLogger(repo Repository, log *slog.Logger) *UseCase {
 	return &UseCase{repo: repo, log: log}
 }
 
-// Create
 func (uc *UseCase) Create(ctx context.Context, input dto.CreateUserInput) (entity.User, error) {
 	if uc.log != nil {
 		uc.log.Info("create user started",
@@ -81,7 +80,6 @@ func (uc *UseCase) validateCreateInput(input dto.CreateUserInput) error {
 	return nil
 }
 
-// GetByID
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
 	if id == uuid.Nil {
 		return nil, fmt.Errorf("id is required")
@@ -92,7 +90,6 @@ func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, err
 	return uc.repo.GetByID(ctx, id)
 }
 
-// GetByOAuthID
 func (uc *UseCase) GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error) {
 	if oauthID == "" || oauthProvider == "" {
 		return nil, fmt.Errorf("oauthId and oauthProvider are required")
@@ -106,7 +103,6 @@ func (uc *UseCase) GetByOAuthID(ctx context.Context, oauthID, oauthProvider stri
 	return uc.repo.GetByOAuthID(ctx, oauthID, oauthProvider)
 }
 
-// GetAll
 func (uc *UseCase) GetAll(ctx context.Context) ([]entity.User, error) {
 	if uc.log != nil {
 		uc.log.Info("get all users started")
@@ -114,7 +110,6 @@ func (uc *UseCase) GetAll(ctx context.Context) ([]entity.User, error) {
 	return uc.repo.GetAll(ctx)
 }
 
-// Update
 func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateUserInput) error {
 	if id == uuid.Nil {
 		return fmt.Errorf("id is required")
@@ -141,7 +136,6 @@ func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateUse
 	return nil
 }
 
-// Delete
 func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
 	if id == uuid.Nil {
 		return fmt.Errorf("id is required")

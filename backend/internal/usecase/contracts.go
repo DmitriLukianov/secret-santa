@@ -51,8 +51,10 @@ type WishlistUseCase interface {
 	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
 	GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error)
+	GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.WishlistItem, error)
 	UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error)
 	DeleteItem(ctx context.Context, itemID uuid.UUID) error
+	GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error)
 }
 
 type AssignmentUseCase interface {

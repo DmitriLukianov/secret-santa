@@ -80,7 +80,7 @@ func NewRouter(
 		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
 		r.Delete("/participants/{id}", participantHandler.Delete)
 
-		r.Route("/users/{userId}/wishlist", func(r chi.Router) {
+		r.Route("/users/me/wishlist", func(r chi.Router) {
 			r.Post("/", wishlistHandler.Create)
 			r.Get("/", wishlistHandler.GetByUser)
 		})

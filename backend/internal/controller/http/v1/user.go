@@ -17,7 +17,7 @@ import (
 
 type UserHandler struct {
 	uc      usecase.UserUseCase
-	eventUC usecase.EventUseCase // ← НОВОЕ поле
+	eventUC usecase.EventUseCase
 }
 
 func NewUserHandler(uc usecase.UserUseCase, eventUC usecase.EventUseCase) *UserHandler {
@@ -157,7 +157,7 @@ func (h *UserHandler) GetMyEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	events, err := h.eventUC.GetMyEvents(r.Context(), userID) // ← используем eventUC
+	events, err := h.eventUC.GetMyEvents(r.Context(), userID)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return

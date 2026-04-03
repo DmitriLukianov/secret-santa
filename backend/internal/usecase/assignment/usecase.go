@@ -36,7 +36,6 @@ func NewWithLogger(repo Repository, participantRepo ParticipantRepository, event
 	}
 }
 
-// Draw — запускает жеребьёвку (только организатор)
 func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 	if uc.log != nil {
 		uc.log.Info("draw started",
@@ -49,7 +48,6 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return definitions.ErrInvalidUserInput
 	}
 
-	// 1. Получаем событие
 	eventPtr, err := uc.eventRepo.GetByID(ctx, eventID)
 	if err != nil {
 		if uc.log != nil {
@@ -58,12 +56,10 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
 	}
 
-	// 2. Проверяем, что это организатор
 	if eventPtr.OrganizerID != userID {
 		return definitions.ErrNotOrganizer
 	}
 
-	// 3. Проверяем статус события
 	if !eventPtr.IsDrawable() {
 		if uc.log != nil {
 			uc.log.Warn("draw not allowed due to status",
@@ -73,7 +69,6 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return definitions.ErrInvalidEventState
 	}
 
-	// 4. Получаем участников
 	participants, err := uc.participantRepo.GetByEvent(ctx, eventID)
 	if err != nil {
 		return fmt.Errorf("failed to get participants: %w", err)
@@ -83,13 +78,11 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return definitions.ErrNotEnoughParticipants
 	}
 
-	// 5. Генерируем новую жеребьёвку (derangement)
 	assignments, err := uc.createDerangement(eventID, participants)
 	if err != nil {
 		return fmt.Errorf("failed to create derangement: %w", err)
 	}
 
-	// FIXED: вся жеребьёвка теперь в одной атомарной транзакции
 	if err := uc.repo.TransactionalDraw(ctx, eventID, assignments, definitions.EventStatusDrawingDone); err != nil {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
@@ -104,7 +97,6 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 	return nil
 }
 
-// createDerangement — улучшенный алгоритм (никто не дарит себе)
 func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Participant) ([]entity.Assignment, error) {
 	n := len(participants)
 	ids := make([]uuid.UUID, n)
@@ -138,7 +130,6 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 	return nil, fmt.Errorf("failed to generate valid derangement after %d attempts", maxAttempts)
 }
 
-// GetByEvent — возвращает ТОЛЬКО свою пару
 func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {
 	if eventID == uuid.Nil || userID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput

@@ -1,6 +1,9 @@
 package wishlist
 
-import "github.com/Masterminds/squirrel"
+import (
+	"github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
+)
 
 var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
@@ -33,4 +36,18 @@ func updateWishlistItemQuery(itemID string) squirrel.UpdateBuilder {
 func deleteWishlistItemQuery(itemID string) squirrel.DeleteBuilder {
 	return qb.Delete("wishlist_items").
 		Where(squirrel.Eq{"id": itemID})
+}
+
+func getWishlistItemByIDQuery(itemID uuid.UUID) squirrel.SelectBuilder {
+	return qb.Select(
+		"id", "wishlist_id", "title", "link", "image_url", "comment", "created_at",
+	).
+		From("wishlist_items").
+		Where(squirrel.Eq{"id": itemID})
+}
+
+func getWishlistByIDQuery(wishlistID uuid.UUID) squirrel.SelectBuilder {
+	return qb.Select("id", "participant_id", "visibility", "created_at", "updated_at").
+		From("wishlists").
+		Where(squirrel.Eq{"id": wishlistID})
 }

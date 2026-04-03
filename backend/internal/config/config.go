@@ -55,16 +55,12 @@ func Load() *Config {
 	return cfg
 }
 
-// проверяем, чтобы переменная окружения была задана, если не задана - используем значение fallback
-
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
 }
-
-// преобразуем строку в тип time.Duration, если указано не верно, то по дефолту ставится 24 часа
 
 func parseDuration(s string) time.Duration {
 	d, err := time.ParseDuration(s)

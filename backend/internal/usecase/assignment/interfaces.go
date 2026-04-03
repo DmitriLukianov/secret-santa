@@ -14,7 +14,6 @@ type Repository interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
 	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 
-	// FIXED: новый метод — вся жеребьёвка в одной атомарной транзакции
 	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
 }
 

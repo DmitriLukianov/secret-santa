@@ -41,3 +41,20 @@ func scanWishlistItems(rows pgx.Rows) ([]entity.WishlistItem, error) {
 	}
 	return items, nil
 }
+
+func scanWishlistItem(row pgx.Row) (*entity.WishlistItem, error) {
+	var item entity.WishlistItem
+	err := row.Scan(
+		&item.ID,
+		&item.WishlistID,
+		&item.Title,
+		&item.Link,
+		&item.ImageURL,
+		&item.Comment,
+		&item.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}

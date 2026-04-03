@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-// TimeoutMiddleware — ограничивает время запроса
 func TimeoutMiddleware(timeout time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.TimeoutHandler(next, timeout, "request timeout")

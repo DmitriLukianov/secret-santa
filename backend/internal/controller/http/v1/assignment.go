@@ -36,7 +36,7 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.uc.Draw(r.Context(), eventID, userID); err != nil {
-		response.WriteHTTPError(w, err) // ✅ ВСЁ УБРАЛИ
+		response.WriteHTTPError(w, err)
 		return
 	}
 

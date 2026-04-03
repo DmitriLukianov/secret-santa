@@ -21,7 +21,6 @@ func NewInvitationHandler(uc usecase.InvitationUseCase) *InvitationHandler {
 	return &InvitationHandler{uc: uc}
 }
 
-// GenerateInvite — только для организатора
 func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -39,8 +38,7 @@ func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Парсим строку "148h" → time.Duration
-	expiresIn := 7 * 24 * time.Hour // по умолчанию 7 дней
+	expiresIn := 7 * 24 * time.Hour
 	if req.ExpiresIn != "" {
 		if d, err := time.ParseDuration(req.ExpiresIn); err == nil {
 			expiresIn = d
@@ -66,7 +64,6 @@ func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(resp)
 }
 
-// JoinByInvite — публичный эндпоинт (роут без AuthMiddleware)
 func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request) {
 	var req request.JoinByInvitationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -78,7 +75,6 @@ func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Получаем userID из токена
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrUnauthorized)

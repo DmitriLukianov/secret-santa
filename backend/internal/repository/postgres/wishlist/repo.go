@@ -21,7 +21,7 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
-	// 🔥 КРИТИЧЕСКИЙ ФИКС: проверяем, что вишлист для этого участника ещё не существует
+
 	existing, err := r.GetByParticipant(ctx, w.ParticipantID)
 	if err == nil && existing != nil {
 		return fmt.Errorf("wishlist already exists for participant %s: %w", w.ParticipantID, definitions.ErrConflict)
@@ -80,7 +80,7 @@ func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title str
 		Set("link", link).
 		Set("image_url", imageURL).
 		Set("comment", comment).
-		Set("created_at", time.Now()) // или updated_at, если добавишь поле
+		Set("created_at", time.Now())
 
 	sql, args, err := query.ToSql()
 	if err != nil {
@@ -90,7 +90,6 @@ func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title str
 	return err
 }
 
-// NEW: удаление товара
 func (r *Repository) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 	query := deleteWishlistItemQuery(itemID.String())
 	sql, args, err := query.ToSql()
@@ -99,4 +98,34 @@ func (r *Repository) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 	}
 	_, err = r.db.Exec(ctx, sql, args...)
 	return err
+}
+
+func (r *Repository) GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.WishlistItem, error) {
+	if itemID == uuid.Nil {
+		return nil, definitions.ErrInvalidUserInput
+	}
+
+	query := getWishlistItemByIDQuery(itemID)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanWishlistItem(row)
+}
+
+func (r *Repository) GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error) {
+	if wishlistID == uuid.Nil {
+		return nil, definitions.ErrInvalidUserInput
+	}
+
+	query := getWishlistByIDQuery(wishlistID)
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+
+	row := r.db.QueryRow(ctx, sql, args...)
+	return scanWishlist(row)
 }

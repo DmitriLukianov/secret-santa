@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Repository — интерфейс, который должен реализовывать postgres-репозиторий
 type Repository interface {
 	Create(ctx context.Context, user entity.User) error
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error)

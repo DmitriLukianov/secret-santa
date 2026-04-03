@@ -2,7 +2,6 @@ package dto
 
 import "time"
 
-// CreateEventInput — данные для создания события
 type CreateEventInput struct {
 	Title           string     `json:"title" validate:"required,min=3"`
 	Description     *string    `json:"description"`
@@ -14,7 +13,6 @@ type CreateEventInput struct {
 	MaxParticipants int        `json:"maxParticipants" validate:"min=2"`
 }
 
-// UpdateEventInput — partial update (все поля pointer)
 type UpdateEventInput struct {
 	Title           *string    `json:"title"`
 	Description     *string    `json:"description"`
@@ -26,7 +24,6 @@ type UpdateEventInput struct {
 	MaxParticipants *int       `json:"maxParticipants"`
 }
 
-// EventResponse — ответ API
 type EventResponse struct {
 	ID              string     `json:"id"`
 	Title           string     `json:"title"`

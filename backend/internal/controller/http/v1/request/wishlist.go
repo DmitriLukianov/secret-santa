@@ -2,7 +2,7 @@ package request
 
 type CreateWishlistRequest struct {
 	EventID    string `json:"eventId" validate:"required,uuid"`
-	Visibility string `json:"visibility" validate:"required,oneof=public santa_only"`
+	Visibility string `json:"visibility" validate:"required,oneof=public friends santa_only"`
 }
 
 type CreateWishlistItemRequest struct {
@@ -12,7 +12,6 @@ type CreateWishlistItemRequest struct {
 	Comment  string `json:"comment,omitempty"`
 }
 
-// NEW: запрос на обновление товара (все поля кроме title — опциональные)
 type UpdateWishlistItemRequest struct {
 	Title    string `json:"title" validate:"required"`
 	Link     string `json:"link,omitempty"`

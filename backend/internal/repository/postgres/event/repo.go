@@ -20,7 +20,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// Create
 func (r *Repository) Create(ctx context.Context, e entity.Event) error {
 	query, args, err := createEventQuery().
 		Values(
@@ -47,7 +46,6 @@ func (r *Repository) Create(ctx context.Context, e entity.Event) error {
 	return err
 }
 
-// GetByID
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	query, args, err := getEventQuery().
 		Where("id = ?", id).
@@ -60,7 +58,6 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, 
 	return ScanEvent(row)
 }
 
-// GetAll
 func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	query, args, err := listEventsQuery().ToSql()
 	if err != nil {
@@ -76,7 +73,6 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	return ScanEvents(rows)
 }
 
-// Update
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
 	q := updateEventQuery().Set("updated_at", "NOW()")
 
@@ -114,7 +110,6 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateE
 	return err
 }
 
-// UpdateStatus
 func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error {
 	query, args, err := updateEventQuery().
 		Set("status", status).
@@ -129,7 +124,6 @@ func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status defi
 	return err
 }
 
-// Delete
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	query, args, err := deleteEventQuery().
 		Where("id = ?", id).
@@ -142,7 +136,6 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-// GetEventsForUser — теперь тоже через queries.go
 func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
 	query, args, err := getEventsForUserQuery().
 		Where(squirrel.Or{

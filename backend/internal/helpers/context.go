@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"secret-santa-backend/internal/definitions" // ← добавлен импорт
+	"secret-santa-backend/internal/definitions"
 
 	"github.com/google/uuid"
 )
 
-// GetUserID — типизированный доступ к userID из контекста
 func GetUserID(r *http.Request) (uuid.UUID, error) {
 	val := r.Context().Value(definitions.UserIDKey)
 	if val == nil {

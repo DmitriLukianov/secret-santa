@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	// ← добавлен импорт
 )
 
 type Wishlist struct {
@@ -23,6 +22,7 @@ type WishlistItem struct {
 	ImageURL   *string   `db:"image_url"`
 	Comment    *string   `db:"comment"`
 	CreatedAt  time.Time `db:"created_at"`
+	Wishlist   *Wishlist `db:"-"`
 }
 
 func NewWishlist(participantID uuid.UUID, visibility string) Wishlist {

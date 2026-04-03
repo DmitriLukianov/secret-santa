@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	// ← добавлен импорт
 )
 
 type Participant struct {

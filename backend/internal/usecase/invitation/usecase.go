@@ -82,12 +82,10 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 		return definitions.ErrNotFound
 	}
 
-	// Проверка срока действия
 	if !inv.IsValid() {
 		return definitions.ErrInvalidEventState
 	}
 
-	// Проверка статуса события
 	event, err := uc.eventRepo.GetByID(ctx, inv.EventID)
 	if err != nil {
 		return err
@@ -96,8 +94,6 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 	if !event.CanAddParticipants() {
 		return definitions.ErrInvalidEventState
 	}
-
-	// Добавляем участника через usecase
 	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		return err

@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	"secret-santa-backend/internal/definitions" // ← добавлен
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5" // ← добавлен для ErrNoRows
+	"github.com/jackc/pgx/v5"
 )
 
 type UseCase struct {
@@ -33,7 +33,6 @@ func NewWithLogger(repo Repository, participantRepo ParticipantRepository, assig
 	}
 }
 
-// Create — создаёт вишлист для участника
 func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibility string) (entity.Wishlist, error) {
 	if uc.log != nil {
 		uc.log.Info("create wishlist started",
@@ -64,7 +63,6 @@ func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibili
 	return wishlist, nil
 }
 
-// AddItem — добавляет элемент в вишлист
 func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
 	if uc.log != nil {
 		uc.log.Info("add wishlist item started",
@@ -101,7 +99,7 @@ func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title stri
 
 func (uc *UseCase) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
 	if participantID == uuid.Nil {
-		return nil, fmt.Errorf("participant id is required")
+		return nil, definitions.ErrInvalidUserInput
 	}
 	if uc.log != nil {
 		uc.log.Info("get wishlist by participant started", slog.String("participant_id", participantID.String()))
@@ -111,7 +109,7 @@ func (uc *UseCase) GetByParticipant(ctx context.Context, participantID uuid.UUID
 
 func (uc *UseCase) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error) {
 	if wishlistID == uuid.Nil {
-		return nil, fmt.Errorf("wishlist id is required")
+		return nil, definitions.ErrInvalidUserInput
 	}
 	if uc.log != nil {
 		uc.log.Info("get wishlist items started", slog.String("wishlist_id", wishlistID.String()))
@@ -119,10 +117,9 @@ func (uc *UseCase) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity
 	return uc.repo.GetItems(ctx, wishlistID)
 }
 
-// GetForUser — возвращает вишлист только если requester является Сантой
 func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error) {
 	if eventID == uuid.Nil || participantID == uuid.Nil || requesterID == uuid.Nil {
-		return nil, fmt.Errorf("eventID, participantID and requesterID are required")
+		return nil, definitions.ErrInvalidUserInput
 	}
 
 	if uc.log != nil {
@@ -133,7 +130,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		)
 	}
 
-	// 1. Получаем вишлист
 	wishlist, err := uc.repo.GetByParticipant(ctx, participantID)
 	if err != nil {
 		if uc.log != nil {
@@ -142,14 +138,12 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 				slog.String("error", err.Error()),
 			)
 		}
-		// 🔥 КРИТИЧЕСКИЙ ФИКС: теперь возвращаем 404 вместо 500
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %w", definitions.ErrWishlistNotFound, err)
 		}
 		return nil, fmt.Errorf("wishlist not found: %w", err)
 	}
 
-	// 2. Получаем участника (чтобы узнать реальный UserID получателя)
 	participant, err := uc.participantRepo.GetByID(ctx, participantID)
 	if err != nil {
 		if uc.log != nil {
@@ -168,7 +162,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		)
 	}
 
-	// 3. Получаем все назначения события
 	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
 	if err != nil {
 		if uc.log != nil {
@@ -180,7 +173,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		return nil, fmt.Errorf("failed to check assignment: %w", err)
 	}
 
-	// 4. Проверяем, является ли requester Сантой для этого получателя
 	isSanta := false
 	for _, a := range assignments {
 		if a.GiverID == requesterID && a.ReceiverID == participant.UserID {
@@ -196,7 +188,7 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 				slog.String("receiver_user_id", participant.UserID.String()),
 			)
 		}
-		return nil, fmt.Errorf("you are not the santa for this participant")
+		return nil, definitions.ErrNotSanta
 	}
 
 	if uc.log != nil {
@@ -209,7 +201,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 	return wishlist, nil
 }
 
-// NEW: обновление товара
 func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
 	if uc.log != nil {
 		uc.log.Info("update wishlist item started",
@@ -218,7 +209,6 @@ func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title strin
 		)
 	}
 
-	// Сначала получаем текущий item, чтобы вернуть обновлённый
 	item := entity.WishlistItem{ID: itemID, Title: title, Link: link, ImageURL: imageURL, Comment: comment}
 
 	if err := uc.repo.UpdateItem(ctx, itemID, title, link, imageURL, comment); err != nil {
@@ -234,7 +224,6 @@ func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title strin
 	return item, nil
 }
 
-// NEW: удаление товара
 func (uc *UseCase) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 	if uc.log != nil {
 		uc.log.Info("delete wishlist item started", slog.String("item_id", itemID.String()))
@@ -251,4 +240,39 @@ func (uc *UseCase) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 		uc.log.Info("wishlist item deleted successfully", slog.String("item_id", itemID.String()))
 	}
 	return nil
+}
+
+func (uc *UseCase) GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.WishlistItem, error) {
+	if itemID == uuid.Nil {
+		return nil, definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("get wishlist item by id started", slog.String("item_id", itemID.String()))
+	}
+
+	items, err := uc.GetItems(ctx, uuid.Nil)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range items {
+		if items[i].ID == itemID {
+			return &items[i], nil
+		}
+	}
+
+	return nil, definitions.ErrWishlistNotFound
+}
+
+func (uc *UseCase) GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error) {
+	if wishlistID == uuid.Nil {
+		return nil, definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("get wishlist by id started", slog.String("wishlist_id", wishlistID.String()))
+	}
+
+	return uc.repo.GetByID(ctx, wishlistID)
 }

@@ -1,6 +1,5 @@
 package definitions
 
-// ====================== EVENT STATUS ======================
 type EventStatus string
 
 const (
@@ -14,20 +13,17 @@ const (
 	EventStatusCancelled          EventStatus = "cancelled"
 )
 
-// ====================== PARTICIPANT ROLE ======================
 const (
 	ParticipantRoleOrganizer   = "organizer"
 	ParticipantRoleParticipant = "participant"
 )
 
-// ====================== WISHLIST VISIBILITY ======================
 const (
 	WishlistVisibilityPublic    = "public"
 	WishlistVisibilityFriends   = "friends"
 	WishlistVisibilitySantaOnly = "santa_only"
 )
 
-// ====================== CONTEXT KEYS ======================
 type contextKey string
 
 const (

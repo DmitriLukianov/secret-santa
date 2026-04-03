@@ -24,7 +24,6 @@ type Event struct {
 	UpdatedAt       time.Time               `db:"updated_at"`
 }
 
-// NewEvent создаёт событие в статусе draft
 func NewEvent(
 	title string,
 	organizerID uuid.UUID,
@@ -52,7 +51,6 @@ func NewEvent(
 	}
 }
 
-// CanTransitionTo — проверяет возможность перехода
 func (e Event) CanTransitionTo(newStatus definitions.EventStatus) bool {
 	switch e.Status {
 	case definitions.EventStatusDraft:
@@ -72,17 +70,14 @@ func (e Event) CanTransitionTo(newStatus definitions.EventStatus) bool {
 	}
 }
 
-// TransitionTo — выполняет переход статуса с проверкой
 func (e *Event) TransitionTo(newStatus definitions.EventStatus) error {
 	if !e.CanTransitionTo(newStatus) {
-		return definitions.ErrInvalidEventState // ← используем из definitions
+		return definitions.ErrInvalidEventState
 	}
 	e.Status = newStatus
 	e.UpdatedAt = time.Now()
 	return nil
 }
-
-// ====================== Вспомогательные методы ======================
 
 func (e Event) IsDrawable() bool {
 	return e.Status == definitions.EventStatusRegistrationClosed || e.Status == definitions.EventStatusDrawingPending

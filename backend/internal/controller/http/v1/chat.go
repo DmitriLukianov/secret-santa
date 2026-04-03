@@ -22,7 +22,6 @@ func NewChatHandler(uc usecase.ChatUseCase) *ChatHandler {
 	return &ChatHandler{uc: uc}
 }
 
-// GetRecipientChat — чат «Кому я Санта»
 func (h *ChatHandler) GetRecipientChat(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -47,7 +46,6 @@ func (h *ChatHandler) GetRecipientChat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.MessagesToResponse(messages))
 }
 
-// GetSenderChat — чат «Кто мой Санта»
 func (h *ChatHandler) GetSenderChat(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -72,7 +70,6 @@ func (h *ChatHandler) GetSenderChat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.MessagesToResponse(messages))
 }
 
-// SendMessage — отправить сообщение
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {

@@ -9,7 +9,6 @@ import (
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
-	// Используем уже существующий интерфейс из participant
 	participant "secret-santa-backend/internal/usecase/participant"
 
 	"github.com/google/uuid"
@@ -66,7 +65,6 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		return entity.Event{}, fmt.Errorf("%w: %w", definitions.ErrConflict, err)
 	}
 
-	// 2. 🔥 Автоматически добавляем организатора как участника
 	organizerParticipant := entity.NewParticipant(event.ID, organizerID, definitions.ParticipantRoleOrganizer)
 	if err := uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
 		if uc.log != nil {
@@ -84,7 +82,6 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 	return event, nil
 }
 
-// ====================== Остальные методы ======================
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	if id == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -215,6 +212,8 @@ func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newSt
 		return fmt.Errorf("%w: status already %s", definitions.ErrInvalidEventState, newStatus)
 	}
 
+	oldStatus := eventPtr.Status
+
 	if err := eventPtr.TransitionTo(newStatus); err != nil {
 		return err
 	}
@@ -226,7 +225,7 @@ func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newSt
 	if uc.log != nil {
 		uc.log.Info("event status changed",
 			slog.String("event_id", id.String()),
-			slog.String("old_status", string(eventPtr.Status)),
+			slog.String("old_status", string(oldStatus)),
 			slog.String("new_status", string(newStatus)),
 		)
 	}

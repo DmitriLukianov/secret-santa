@@ -24,8 +24,6 @@ func NewEventHandler(uc usecase.EventUseCase) *EventHandler {
 	return &EventHandler{uc: uc}
 }
 
-// ==================== CRUD ====================
-
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -146,8 +144,6 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// ==================== Статусы ====================
 
 func (h *EventHandler) OpenInvitation(w http.ResponseWriter, r *http.Request) {
 	h.changeStatus(w, r, h.uc.OpenInvitation)

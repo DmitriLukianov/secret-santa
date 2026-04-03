@@ -2,9 +2,6 @@ package response
 
 import "secret-santa-backend/internal/entity"
 
-// =============================================
-// Event
-// =============================================
 func EventToResponse(e *entity.Event) EventResponse {
 	if e == nil {
 		return EventResponse{}
@@ -33,14 +30,11 @@ func EventsToResponse(events []entity.Event) []EventResponse {
 
 	resp := make([]EventResponse, len(events))
 	for i := range events {
-		resp[i] = EventToResponse(&events[i]) // ✅ FIX
+		resp[i] = EventToResponse(&events[i])
 	}
 	return resp
 }
 
-// =============================================
-// User
-// =============================================
 func UserToResponse(u *entity.User) UserResponse {
 	if u == nil {
 		return UserResponse{}
@@ -64,9 +58,6 @@ func UsersToResponse(users []*entity.User) []UserResponse {
 	return resp
 }
 
-// =============================================
-// Participant
-// =============================================
 func ParticipantToResponse(p *entity.Participant) ParticipantResponse {
 	if p == nil {
 		return ParticipantResponse{}
@@ -94,9 +85,6 @@ func ParticipantsToResponse(participants []*entity.Participant) []ParticipantRes
 	return resp
 }
 
-// =============================================
-// Wishlist + WishlistItem
-// =============================================
 func WishlistToResponse(w *entity.Wishlist) WishlistResponse {
 	if w == nil {
 		return WishlistResponse{}
@@ -136,9 +124,6 @@ func WishlistItemsToResponse(items []*entity.WishlistItem) []WishlistItemRespons
 	return resp
 }
 
-// =============================================
-// Assignment
-// =============================================
 func AssignmentToResponse(a *entity.Assignment) AssignmentResponse {
 	if a == nil {
 		return AssignmentResponse{}

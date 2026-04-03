@@ -57,27 +57,23 @@ func (r *Repository) DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 	return err
 }
 
-// FIXED: новая атомарная операция — вся жеребьёвка в одной транзакции
 func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) // в случае ошибки будет откат
+	defer tx.Rollback(ctx)
 
-	// 1. Удаляем старые назначения
 	if err := r.deleteByEventTx(ctx, tx, eventID); err != nil {
 		return fmt.Errorf("failed to delete old assignments: %w", err)
 	}
 
-	// 2. Создаём новые назначения
 	for _, a := range assignments {
 		if err := r.createTx(ctx, tx, a); err != nil {
 			return fmt.Errorf("failed to create assignment: %w", err)
 		}
 	}
 
-	// 3. Обновляем статус события
 	if err := r.updateEventStatusTx(ctx, tx, eventID, newStatus); err != nil {
 		return fmt.Errorf("failed to update event status: %w", err)
 	}
@@ -89,7 +85,6 @@ func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, a
 	return nil
 }
 
-// Вспомогательные методы внутри транзакции
 func (r *Repository) deleteByEventTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID) error {
 	query := deleteAssignmentsByEventQuery(eventID.String())
 	sql, args, err := query.ToSql()
@@ -113,8 +108,7 @@ func (r *Repository) createTx(ctx context.Context, tx pgx.Tx, a entity.Assignmen
 }
 
 func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, status definitions.EventStatus) error {
-	// Используем тот же query-builder, что и в event repo (можно вынести в общий helper при желании)
-	// Здесь для минимальности используем прямой SQL
+
 	_, err := tx.Exec(ctx, `
 		UPDATE events 
 		SET status = $1, updated_at = now() 

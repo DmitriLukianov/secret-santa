@@ -42,7 +42,6 @@ func New() *App {
 
 	log := logger.New(cfg.LogLevel, cfg.AppEnv)
 
-	// ← ИЗМЕНЕНО: теперь используем новый пакет database
 	db, err := database.NewDB(cfg.DatabaseURL)
 	if err != nil {
 		log.Error("failed to connect to database", slog.String("error", err.Error()))
