@@ -32,6 +32,10 @@ func NewRouter(
 	router.Route("/auth", func(r chi.Router) {
 		r.Get("/login", authHandler.Login)
 		r.Get("/callback", authHandler.Callback)
+
+		// === Новые эндпоинты для входа по email + OTP ===
+		r.Post("/send-otp", authHandler.SendOTP)
+		r.Post("/verify-otp", authHandler.VerifyOTP)
 	})
 
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {

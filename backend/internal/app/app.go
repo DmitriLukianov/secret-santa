@@ -5,11 +5,10 @@ import (
 	"net/http"
 
 	"secret-santa-backend/internal/config"
-	"secret-santa-backend/internal/logger"
-
-	"secret-santa-backend/internal/oauth"
-
 	"secret-santa-backend/internal/database"
+	"secret-santa-backend/internal/email"
+	"secret-santa-backend/internal/logger"
+	"secret-santa-backend/internal/oauth"
 
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
 	chatrepo "secret-santa-backend/internal/repository/postgres/chat"
@@ -17,6 +16,7 @@ import (
 	invitationrepo "secret-santa-backend/internal/repository/postgres/invitation"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
 	userrepo "secret-santa-backend/internal/repository/postgres/user"
+	verificationrepo "secret-santa-backend/internal/repository/postgres/verification"
 	wishlistrepo "secret-santa-backend/internal/repository/postgres/wishlist"
 
 	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
@@ -56,13 +56,21 @@ func New() *App {
 	invitationRepo := invitationrepo.New(db)
 	chatRepo := chatrepo.New(db)
 
+	// === Новый репозиторий для OTP ===
+	verificationRepo := verificationrepo.New(db)
+
 	userUC := userusecase.NewWithLogger(userRepo, log)
-	authUC := authusecase.NewWithLogger(userUC, log)
+
+	emailService := email.New(cfg, log)
+
+	// Обновлённый authUC
+	authUC := authusecase.NewWithLogger(userUC, emailService, verificationRepo, log)
 
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
 
-	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, log)
+	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, userUC, emailService, log)
+
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
 
 	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, log)

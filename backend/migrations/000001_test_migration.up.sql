@@ -169,7 +169,25 @@ COMMENT ON COLUMN messages.receiver_id IS 'Получатель';
 COMMENT ON COLUMN messages.content IS 'Текст сообщения';
 COMMENT ON COLUMN messages.created_at IS 'Дата отправки';
 
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email         TEXT NOT NULL,
+    code          TEXT NOT NULL,           -- 6-значный код
+    expires_at    TIMESTAMPTZ NOT NULL,
+    used          BOOLEAN NOT NULL DEFAULT false,
+    purpose       TEXT NOT NULL DEFAULT 'login_otp', -- login_otp | login_notification | draw_notification
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE email_verification_codes IS 'Коды подтверждения и уведомления по email';
+COMMENT ON COLUMN email_verification_codes.email IS 'Email получателя';
+COMMENT ON COLUMN email_verification_codes.code IS '6-значный код';
+COMMENT ON COLUMN email_verification_codes.purpose IS 'Для чего код (логин, уведомление о входе, жеребьёвка)';
+
 -- Индексы
+CREATE INDEX idx_email_codes_email ON email_verification_codes(email);
+CREATE INDEX idx_email_codes_expires ON email_verification_codes(expires_at);
+CREATE INDEX idx_email_codes_purpose ON email_verification_codes(purpose);
 CREATE INDEX idx_users_oauth ON users(oauth_id, oauth_provider);
 CREATE INDEX idx_events_organizer ON events(organizer_id);
 CREATE INDEX idx_events_status ON events(status);

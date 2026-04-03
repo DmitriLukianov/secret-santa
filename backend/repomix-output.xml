@@ -86,10 +86,13 @@ internal/
     constants.go
     errors.go
   dto/
+    auth.go
     event.go
     invitation.go
     user.go
     wishlist.go
+  email/
+    service.go
   entity/
     assignment.go
     event.go
@@ -131,6 +134,10 @@ internal/
         queries.go
         repo.go
       user/
+        mapper.go
+        queries.go
+        repo.go
+      verification/
         mapper.go
         queries.go
         repo.go
@@ -202,11 +209,10 @@ import (
 	"net/http"
 
 	"secret-santa-backend/internal/config"
-	"secret-santa-backend/internal/logger"
-
-	"secret-santa-backend/internal/oauth"
-
 	"secret-santa-backend/internal/database"
+	"secret-santa-backend/internal/email"
+	"secret-santa-backend/internal/logger"
+	"secret-santa-backend/internal/oauth"
 
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
 	chatrepo "secret-santa-backend/internal/repository/postgres/chat"
@@ -214,6 +220,7 @@ import (
 	invitationrepo "secret-santa-backend/internal/repository/postgres/invitation"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
 	userrepo "secret-santa-backend/internal/repository/postgres/user"
+	verificationrepo "secret-santa-backend/internal/repository/postgres/verification"
 	wishlistrepo "secret-santa-backend/internal/repository/postgres/wishlist"
 
 	assignmentusecase "secret-santa-backend/internal/usecase/assignment"
@@ -253,13 +260,21 @@ func New() *App {
 	invitationRepo := invitationrepo.New(db)
 	chatRepo := chatrepo.New(db)
 
+	// === Новый репозиторий для OTP ===
+	verificationRepo := verificationrepo.New(db)
+
 	userUC := userusecase.NewWithLogger(userRepo, log)
-	authUC := authusecase.NewWithLogger(userUC, log)
+
+	emailService := email.New(cfg, log)
+
+	// Обновлённый authUC
+	authUC := authusecase.NewWithLogger(userUC, emailService, verificationRepo, log)
 
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
 
-	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, log)
+	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, userUC, emailService, log)
+
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
 
 	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, log)
@@ -322,6 +337,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -337,6 +353,13 @@ type Config struct {
 	JWTSecret string        `env:"JWT_SECRET"`
 	JWTTTL    time.Duration `env:"JWT_TTL" envDefault:"24h"`
 
+	// === SMTP Mail.ru ===
+	SMTPHost     string `env:"SMTP_HOST" envDefault:"smtp.mail.ru"`
+	SMTPPort     int    `env:"SMTP_PORT" envDefault:"587"`
+	SMTPUsername string `env:"SMTP_USERNAME"` // ваш полный email, например: vasya@mail.ru
+	SMTPPassword string `env:"SMTP_PASSWORD"` // приложенный пароль (НЕ основной!)
+	FromEmail    string `env:"FROM_EMAIL"`    // от кого будут письма (обычно тот же email)
+
 	OAuthProvider      string `env:"OAUTH_PROVIDER" envDefault:"github"`
 	GithubClientID     string `env:"GITHUB_CLIENT_ID"`
 	GithubClientSecret string `env:"GITHUB_CLIENT_SECRET"`
@@ -349,26 +372,34 @@ func Load() *Config {
 	}
 
 	cfg := &Config{
-		AppPort:            getEnv("APP_PORT", "8080"),
-		AppEnv:             getEnv("APP_ENV", "local"),
-		LogLevel:           getEnv("LOG_LEVEL", "info"),
-		DatabaseURL:        getEnv("DATABASE_URL", ""),
-		JWTSecret:          getEnv("JWT_SECRET", ""),
-		JWTTTL:             parseDuration(getEnv("JWT_TTL", "24h")),
+		AppPort:     getEnv("APP_PORT", "8080"),
+		AppEnv:      getEnv("APP_ENV", "local"),
+		LogLevel:    getEnv("LOG_LEVEL", "info"),
+		DatabaseURL: getEnv("DATABASE_URL", ""),
+		JWTSecret:   getEnv("JWT_SECRET", ""),
+		JWTTTL:      parseDuration(getEnv("JWT_TTL", "24h")),
+
+		SMTPHost:     getEnv("SMTP_HOST", "smtp.mail.ru"),
+		SMTPPort:     getIntEnv("SMTP_PORT", 587),
+		SMTPUsername: getEnv("SMTP_USERNAME", ""),
+		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+		FromEmail:    getEnv("FROM_EMAIL", ""),
+
 		OAuthProvider:      getEnv("OAUTH_PROVIDER", "github"),
 		GithubClientID:     getEnv("GITHUB_CLIENT_ID", ""),
 		GithubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
 		GithubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", ""),
 	}
 
+	// Обязательные проверки
 	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
-	if cfg.JWTSecret == "" {
-		log.Fatal("JWT_SECRET is required and must be at least 32 characters")
+	if cfg.JWTSecret == "" || len(cfg.JWTSecret) < 32 {
+		log.Fatal("JWT_SECRET must be at least 32 characters")
 	}
-	if len(cfg.JWTSecret) < 32 {
-		log.Fatal("JWT_SECRET must be at least 32 characters long")
+	if cfg.SMTPUsername == "" || cfg.SMTPPassword == "" || cfg.FromEmail == "" {
+		log.Fatal("SMTP_USERNAME, SMTP_PASSWORD and FROM_EMAIL are required for email notifications")
 	}
 
 	return cfg
@@ -377,6 +408,15 @@ func Load() *Config {
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getIntEnv(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
 	}
 	return fallback
 }
@@ -1020,6 +1060,8 @@ import (
 
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/oauth"
 	authuc "secret-santa-backend/internal/usecase/auth"
 )
@@ -1081,6 +1123,57 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"token": jwtToken})
+}
+
+// SendOTP — отправить код на почту (обычный вход)
+func (h *AuthHandler) SendOTP(w http.ResponseWriter, r *http.Request) {
+	var req dto.SendOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	if err := h.uc.SendOTP(r.Context(), req.Email); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Код отправлен на почту",
+	})
+}
+
+// VerifyOTP — проверить код и выдать токен
+func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
+	var req dto.VerifyOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	userID, err := h.uc.VerifyOTP(r.Context(), req.Email, req.Code)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	jwtToken, err := h.jwt.GenerateToken(userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": jwtToken})
 }
 </file>
 
@@ -1628,6 +1721,10 @@ func NewRouter(
 	router.Route("/auth", func(r chi.Router) {
 		r.Get("/login", authHandler.Login)
 		r.Get("/callback", authHandler.Callback)
+
+		// === Новые эндпоинты для входа по email + OTP ===
+		r.Post("/send-otp", authHandler.SendOTP)
+		r.Post("/verify-otp", authHandler.VerifyOTP)
 	})
 
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -2247,6 +2344,19 @@ var (
 )
 </file>
 
+<file path="internal/dto/auth.go">
+package dto
+
+type SendOTPRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+type VerifyOTPRequest struct {
+	Email string `json:"email" validate:"required,email"`
+	Code  string `json:"code" validate:"required,len=6"`
+}
+</file>
+
 <file path="internal/dto/event.go">
 package dto
 
@@ -2353,6 +2463,122 @@ type UpdateWishlistInput struct {
 	Link        *string
 	ImageURL    *string
 	Visibility  *string
+}
+</file>
+
+<file path="internal/email/service.go">
+package email
+
+import (
+	"context"
+	"crypto/rand"
+	"fmt"
+	"log/slog"
+	"math/big"
+	"net/smtp"
+
+	"secret-santa-backend/internal/config"
+)
+
+type Service struct {
+	cfg *config.Config
+	log *slog.Logger
+}
+
+func New(cfg *config.Config, log *slog.Logger) *Service {
+	return &Service{cfg: cfg, log: log}
+}
+
+// SendLoginNotification — уведомление при входе через GitHub
+func (s *Service) SendLoginNotification(ctx context.Context, email, name string) error {
+	subject := "✅ Вы успешно вошли в Тайный Санта"
+	body := fmt.Sprintf(`Привет, %s!
+
+Вы только что вошли в аккаунт Тайный Санта.
+
+Если это были не вы — немедленно напишите нам.
+
+С наилучшими пожеланиями,
+Команда Тайный Санта`, name)
+
+	return s.send(ctx, email, subject, body)
+}
+
+// SendOTP — отправка 6-значного кода
+func (s *Service) SendOTP(ctx context.Context, email string) (string, error) {
+	code := s.generateOTP()
+
+	subject := "🔑 Код подтверждения для Тайный Санта"
+	body := fmt.Sprintf(`Ваш код подтверждения: %s
+
+Код действителен 10 минут.
+
+Если вы не запрашивали код — просто проигнорируйте это письмо.
+
+С наилучшими пожеланиями,
+Команда Тайный Санта`, code)
+
+	err := s.send(ctx, email, subject, body)
+	if err != nil {
+		return "", err
+	}
+	return code, nil
+}
+
+// === НОВОЕ: Уведомление при начале жеребьёвки ===
+func (s *Service) SendDrawNotification(ctx context.Context, email, eventTitle string) error {
+	subject := "🎲 Жеребьёвка проведена!"
+	body := fmt.Sprintf(`Привет!
+
+В событии «%s» проведена жеребьёвка.
+
+Теперь вы можете посмотреть, кому дарите подарок, в разделе "Мои события".
+
+Удачи в Тайном Санте! 🎁
+
+С наилучшими пожеланиями,
+Команда Тайный Санта`, eventTitle)
+
+	return s.send(ctx, email, subject, body)
+}
+
+// generateOTP — 6-значный код
+func (s *Service) generateOTP() string {
+	const digits = "0123456789"
+	code := make([]byte, 6)
+	for i := range code {
+		n, _ := rand.Int(rand.Reader, big.NewInt(10))
+		code[i] = digits[n.Int64()]
+	}
+	return string(code)
+}
+
+func (s *Service) send(ctx context.Context, to, subject, body string) error {
+	if s.log != nil {
+		s.log.Info("sending email", slog.String("to", to), slog.String("subject", subject))
+	}
+
+	auth := smtp.PlainAuth("", s.cfg.SMTPUsername, s.cfg.SMTPPassword, s.cfg.SMTPHost)
+
+	msg := []byte(fmt.Sprintf("From: %s\r\n"+
+		"To: %s\r\n"+
+		"Subject: %s\r\n"+
+		"Content-Type: text/plain; charset=UTF-8\r\n\r\n"+
+		"%s\r\n", s.cfg.FromEmail, to, subject, body))
+
+	addr := fmt.Sprintf("%s:%d", s.cfg.SMTPHost, s.cfg.SMTPPort)
+
+	if err := smtp.SendMail(addr, auth, s.cfg.FromEmail, []string{to}, msg); err != nil {
+		if s.log != nil {
+			s.log.Error("failed to send email", slog.String("to", to), slog.String("error", err.Error()))
+		}
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+
+	if s.log != nil {
+		s.log.Info("email sent successfully", slog.String("to", to))
+	}
+	return nil
 }
 </file>
 
@@ -4078,6 +4304,132 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 }
 </file>
 
+<file path="internal/repository/postgres/verification/mapper.go">
+package verification
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+)
+
+type VerificationCode struct {
+	ID        uuid.UUID
+	Email     string
+	Code      string
+	ExpiresAt time.Time
+	Used      bool
+	CreatedAt time.Time
+}
+
+func scanVerificationCode(row pgx.Row) (*VerificationCode, error) {
+	var vc VerificationCode
+	err := row.Scan(
+		&vc.ID,
+		&vc.Email,
+		&vc.Code,
+		&vc.ExpiresAt,
+		&vc.Used,
+		&vc.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &vc, nil
+}
+</file>
+
+<file path="internal/repository/postgres/verification/queries.go">
+package verification
+
+import "github.com/Masterminds/squirrel"
+
+var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+func saveCodeQuery() squirrel.InsertBuilder {
+	return qb.Insert("email_verification_codes").
+		Columns("email", "code", "expires_at")
+}
+
+func getValidCodeQuery() squirrel.SelectBuilder {
+	return qb.Select("id", "email", "code", "expires_at", "used", "created_at").
+		From("email_verification_codes").
+		Where("used = false").
+		Where("expires_at > NOW()")
+}
+
+func markAsUsedQuery() squirrel.UpdateBuilder {
+	return qb.Update("email_verification_codes").
+		Set("used", true).
+		Where("used = false")
+}
+</file>
+
+<file path="internal/repository/postgres/verification/repo.go">
+package verification
+
+import (
+	"context"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Repository struct {
+	db *pgxpool.Pool
+}
+
+func New(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
+}
+
+func (r *Repository) SaveCode(ctx context.Context, email, code string, expiresAt time.Time) error {
+	query := saveCodeQuery().
+		Values(email, code, expiresAt)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+
+func (r *Repository) GetValidCode(ctx context.Context, email, code string) (bool, error) {
+	query := getValidCodeQuery().
+		Where("email = ?", email).
+		Where("code = ?", code)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return false, err
+	}
+
+	row := r.db.QueryRow(ctx, sql, args...)
+	_, err = scanVerificationCode(row)
+	if err != nil {
+		return false, nil // код не найден или просрочен
+	}
+	return true, nil
+}
+
+func (r *Repository) MarkAsUsed(ctx context.Context, email, code string) error {
+	query := markAsUsedQuery().
+		Where("email = ?", email).
+		Where("code = ?", code)
+
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx, sql, args...)
+	return err
+}
+</file>
+
 <file path="internal/repository/postgres/wishlist/mapper.go">
 package wishlist
 
@@ -4391,6 +4743,7 @@ import (
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
+	"secret-santa-backend/internal/usecase"
 
 	"github.com/google/uuid"
 )
@@ -4399,22 +4752,34 @@ type UseCase struct {
 	repo            Repository
 	participantRepo ParticipantRepository
 	eventRepo       EventRepository
+	userUC          usecase.UserUseCase
+	emailService    usecase.EmailService
 	log             *slog.Logger
 }
 
-func New(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository) *UseCase {
+func New(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository, userUC usecase.UserUseCase) *UseCase {
 	return &UseCase{
 		repo:            repo,
 		participantRepo: participantRepo,
 		eventRepo:       eventRepo,
+		userUC:          userUC,
 	}
 }
 
-func NewWithLogger(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository, log *slog.Logger) *UseCase {
+func NewWithLogger(
+	repo Repository,
+	participantRepo ParticipantRepository,
+	eventRepo EventRepository,
+	userUC usecase.UserUseCase,
+	emailService usecase.EmailService,
+	log *slog.Logger,
+) *UseCase {
 	return &UseCase{
 		repo:            repo,
 		participantRepo: participantRepo,
 		eventRepo:       eventRepo,
+		userUC:          userUC,
+		emailService:    emailService,
 		log:             log,
 	}
 }
@@ -4470,10 +4835,43 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
 
+	// === УВЕДОМЛЕНИЯ ПРИ ЖЕРЕБЬЁВКЕ ===
+	if uc.emailService != nil && uc.userUC != nil {
+		notified := 0
+		for _, p := range participants {
+			userPtr, err := uc.userUC.GetByID(ctx, p.UserID)
+			if err != nil || userPtr == nil {
+				if uc.log != nil {
+					uc.log.Warn("failed to resolve participant email for draw notification",
+						slog.String("event_id", eventID.String()),
+						slog.String("user_id", p.UserID.String()),
+						slog.String("error", fmt.Sprint(err)),
+					)
+				}
+				continue
+			}
+
+			if err := uc.emailService.SendDrawNotification(ctx, userPtr.Email, eventPtr.Title); err != nil && uc.log != nil {
+				uc.log.Warn("failed to send draw notification",
+					slog.String("event_id", eventID.String()),
+					slog.String("user_id", userPtr.ID.String()),
+					slog.String("email", userPtr.Email),
+					slog.String("error", err.Error()),
+				)
+				continue
+			}
+			notified++
+		}
+		if uc.log != nil {
+			uc.log.Info("draw notifications sent", slog.Int("notified_users", notified))
+		}
+	}
+
 	if uc.log != nil {
 		uc.log.Info("draw completed successfully",
 			slog.String("event_id", eventID.String()),
 			slog.Int("assignments_created", len(assignments)),
+			slog.Int("participants_notified", len(participants)),
 		)
 	}
 
@@ -4504,7 +4902,6 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		if valid {
 			assignments := make([]entity.Assignment, n)
 			for i := 0; i < n; i++ {
-				// Теперь NewAssignment — чистый DB-first конструктор
 				assignments[i] = entity.NewAssignment(eventID, ids[i], shuffled[i])
 			}
 			return assignments, nil
@@ -4524,7 +4921,6 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([
 		return nil, fmt.Errorf("failed to get assignments: %w", err)
 	}
 
-	// Возвращаем только назначение текущего пользователя (как Санта)
 	for _, a := range assignments {
 		if a.GiverID == userID {
 			return []entity.Assignment{a}, nil
@@ -4542,6 +4938,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
@@ -4552,18 +4949,30 @@ import (
 )
 
 type UseCase struct {
-	userUC usecase.UserUseCase
-	log    *slog.Logger
+	userUC           usecase.UserUseCase
+	emailService     usecase.EmailService
+	verificationRepo usecase.VerificationRepository
+	log              *slog.Logger
 }
 
-func New(userUC usecase.UserUseCase) *UseCase {
-	return &UseCase{userUC: userUC}
+func New(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository) *UseCase {
+	return &UseCase{
+		userUC:           userUC,
+		emailService:     emailService,
+		verificationRepo: verificationRepo,
+	}
 }
 
-func NewWithLogger(userUC usecase.UserUseCase, log *slog.Logger) *UseCase {
-	return &UseCase{userUC: userUC, log: log}
+func NewWithLogger(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository, log *slog.Logger) *UseCase {
+	return &UseCase{
+		userUC:           userUC,
+		emailService:     emailService,
+		verificationRepo: verificationRepo,
+		log:              log,
+	}
 }
 
+// LoginWithOAuth — GitHub OAuth + уведомление о входе
 func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error) {
 	if uc.log != nil {
 		uc.log.Info("oauth login started",
@@ -4576,16 +4985,17 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", definitions.ErrMissingOAuthCode
 	}
 
-	// Сначала пытаемся найти существующего пользователя
 	user, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
 	if err == nil && user != nil {
 		if uc.log != nil {
 			uc.log.Info("existing oauth user found", slog.String("user_id", user.ID.String()))
 		}
+		if uc.emailService != nil {
+			_ = uc.emailService.SendLoginNotification(ctx, user.Email, user.Name)
+		}
 		return user.ID.String(), nil
 	}
 
-	// Если пользователя нет — создаём нового
 	if !errors.Is(err, definitions.ErrUserNotFound) && err != nil {
 		return "", fmt.Errorf("failed to lookup oauth user: %w", err)
 	}
@@ -4604,6 +5014,73 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 
 	if uc.log != nil {
 		uc.log.Info("new oauth user created", slog.String("user_id", createdUser.ID.String()))
+	}
+
+	if uc.emailService != nil {
+		_ = uc.emailService.SendLoginNotification(ctx, createdUser.Email, createdUser.Name)
+	}
+	return createdUser.ID.String(), nil
+}
+
+func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
+	if uc.log != nil {
+		uc.log.Info("send otp started", slog.String("email", email))
+	}
+
+	if uc.emailService == nil {
+		return fmt.Errorf("email service is not configured")
+	}
+
+	code, err := uc.emailService.SendOTP(ctx, email)
+	if err != nil {
+		return fmt.Errorf("failed to send OTP: %w", err)
+	}
+
+	expiresAt := time.Now().Add(10 * time.Minute)
+	if err := uc.verificationRepo.SaveCode(ctx, email, code, expiresAt); err != nil {
+		return fmt.Errorf("failed to save verification code: %w", err)
+	}
+
+	return nil
+}
+
+// VerifyOTP — почищенная версия (без дублирования пользователей)
+func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, error) {
+	if uc.log != nil {
+		uc.log.Info("verify otp started", slog.String("email", email))
+	}
+
+	valid, err := uc.verificationRepo.GetValidCode(ctx, email, code)
+	if err != nil || !valid {
+		return "", definitions.ErrInvalidUserInput
+	}
+
+	_ = uc.verificationRepo.MarkAsUsed(ctx, email, code)
+
+	// Ищем существующего пользователя по email
+	user, err := uc.userUC.GetByEmail(ctx, email)
+	if err == nil && user != nil {
+		if uc.emailService != nil {
+			_ = uc.emailService.SendLoginNotification(ctx, user.Email, user.Name)
+		}
+		return user.ID.String(), nil
+	}
+
+	// Если пользователя нет — создаём (passwordless)
+	createInput := dto.CreateUserInput{
+		Name:          "Пользователь", // можно потом улучшить
+		Email:         email,
+		OAuthID:       email,
+		OAuthProvider: "email",
+	}
+
+	createdUser, err := uc.userUC.Create(ctx, createInput)
+	if err != nil {
+		return "", fmt.Errorf("failed to create user: %w", err)
+	}
+
+	if uc.emailService != nil {
+		_ = uc.emailService.SendLoginNotification(ctx, createdUser.Email, createdUser.Name)
 	}
 
 	return createdUser.ID.String(), nil
@@ -5436,7 +5913,7 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateUserInput) (entit
 				slog.String("error", err.Error()),
 			)
 		}
-		return entity.User{}, err // ошибка уже sentinel из repo
+		return entity.User{}, err
 	}
 
 	if uc.log != nil {
@@ -5472,6 +5949,17 @@ func (uc *UseCase) GetByOAuthID(ctx context.Context, oauthID, oauthProvider stri
 	return uc.repo.GetByOAuthID(ctx, oauthID, oauthProvider)
 }
 
+// === НОВЫЙ МЕТОД ===
+func (uc *UseCase) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
+	if email == "" {
+		return nil, definitions.ErrInvalidUserInput
+	}
+	if uc.log != nil {
+		uc.log.Info("get user by email started", slog.String("email", email))
+	}
+	return uc.repo.GetByEmail(ctx, email)
+}
+
 func (uc *UseCase) GetAll(ctx context.Context) ([]entity.User, error) {
 	if uc.log != nil {
 		uc.log.Info("get all users started")
@@ -5484,9 +5972,7 @@ func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateUse
 		return definitions.ErrInvalidUUID
 	}
 	if uc.log != nil {
-		uc.log.Info("update user started",
-			slog.String("user_id", id.String()),
-		)
+		uc.log.Info("update user started", slog.String("user_id", id.String()))
 	}
 	if err := uc.repo.Update(ctx, id, input.Name, input.Email); err != nil {
 		if uc.log != nil {
@@ -5840,10 +6326,12 @@ package usecase
 
 import (
 	"context"
+	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
+	"secret-santa-backend/internal/oauth"
 
 	"github.com/google/uuid"
 )
@@ -5853,6 +6341,7 @@ type UserUseCase interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error)
 	GetAll(ctx context.Context) ([]entity.User, error)
+	GetByEmail(ctx context.Context, email string) (*entity.User, error)
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateUserInput) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
@@ -5929,6 +6418,25 @@ type AssignmentRepository interface {
 
 	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
 }
+type EmailService interface {
+	SendLoginNotification(ctx context.Context, email, name string) error
+	SendOTP(ctx context.Context, email string) (string, error)
+	SendDrawNotification(ctx context.Context, email, eventTitle string) error
+}
+
+// === НОВОЕ: Репозиторий для OTP-кодов ===
+type VerificationRepository interface {
+	SaveCode(ctx context.Context, email, code string, expiresAt time.Time) error
+	GetValidCode(ctx context.Context, email, code string) (bool, error)
+	MarkAsUsed(ctx context.Context, email, code string) error
+}
+
+// AuthUseCase (обновлённый)
+type AuthUseCase interface {
+	LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error)
+	SendOTP(ctx context.Context, email string) error
+	VerifyOTP(ctx context.Context, email, code string) (string, error)
+}
 </file>
 
 <file path="migrations/000001_test_migration.down.sql">
@@ -5943,7 +6451,7 @@ DROP TABLE IF EXISTS assignments;
 DROP TABLE IF EXISTS participants;
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS users;
-
+DROP TABLE IF EXISTS email_verification_codes;
 -- +goose StatementEnd
 </file>
 
@@ -6119,7 +6627,25 @@ COMMENT ON COLUMN messages.receiver_id IS 'Получатель';
 COMMENT ON COLUMN messages.content IS 'Текст сообщения';
 COMMENT ON COLUMN messages.created_at IS 'Дата отправки';
 
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email         TEXT NOT NULL,
+    code          TEXT NOT NULL,           -- 6-значный код
+    expires_at    TIMESTAMPTZ NOT NULL,
+    used          BOOLEAN NOT NULL DEFAULT false,
+    purpose       TEXT NOT NULL DEFAULT 'login_otp', -- login_otp | login_notification | draw_notification
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE email_verification_codes IS 'Коды подтверждения и уведомления по email';
+COMMENT ON COLUMN email_verification_codes.email IS 'Email получателя';
+COMMENT ON COLUMN email_verification_codes.code IS '6-значный код';
+COMMENT ON COLUMN email_verification_codes.purpose IS 'Для чего код (логин, уведомление о входе, жеребьёвка)';
+
 -- Индексы
+CREATE INDEX idx_email_codes_email ON email_verification_codes(email);
+CREATE INDEX idx_email_codes_expires ON email_verification_codes(expires_at);
+CREATE INDEX idx_email_codes_purpose ON email_verification_codes(purpose);
 CREATE INDEX idx_users_oauth ON users(oauth_id, oauth_provider);
 CREATE INDEX idx_events_organizer ON events(organizer_id);
 CREATE INDEX idx_events_status ON events(status);
@@ -6145,6 +6671,12 @@ GITHUB_REDIRECT_URL=http://localhost:8080/auth/callback
 
 # JWT
 JWT_SECRET=your-secret-key-change-me
+
+SMTP_HOST=smtp.mail.ru
+SMTP_PORT=587
+SMTP_USERNAME=your_email@mail.ru          # ← ваш полный email
+SMTP_PASSWORD=eNqnylwGz75aMq68yYkg
+FROM_EMAIL=your_email@mail.ru             # ← от кого будут приходить письма
 </file>
 
 <file path=".gitignore">

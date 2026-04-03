@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -18,6 +19,13 @@ type Config struct {
 	JWTSecret string        `env:"JWT_SECRET"`
 	JWTTTL    time.Duration `env:"JWT_TTL" envDefault:"24h"`
 
+	// === SMTP Mail.ru ===
+	SMTPHost     string `env:"SMTP_HOST" envDefault:"smtp.mail.ru"`
+	SMTPPort     int    `env:"SMTP_PORT" envDefault:"587"`
+	SMTPUsername string `env:"SMTP_USERNAME"` // ваш полный email, например: vasya@mail.ru
+	SMTPPassword string `env:"SMTP_PASSWORD"` // приложенный пароль (НЕ основной!)
+	FromEmail    string `env:"FROM_EMAIL"`    // от кого будут письма (обычно тот же email)
+
 	OAuthProvider      string `env:"OAUTH_PROVIDER" envDefault:"github"`
 	GithubClientID     string `env:"GITHUB_CLIENT_ID"`
 	GithubClientSecret string `env:"GITHUB_CLIENT_SECRET"`
@@ -30,26 +38,34 @@ func Load() *Config {
 	}
 
 	cfg := &Config{
-		AppPort:            getEnv("APP_PORT", "8080"),
-		AppEnv:             getEnv("APP_ENV", "local"),
-		LogLevel:           getEnv("LOG_LEVEL", "info"),
-		DatabaseURL:        getEnv("DATABASE_URL", ""),
-		JWTSecret:          getEnv("JWT_SECRET", ""),
-		JWTTTL:             parseDuration(getEnv("JWT_TTL", "24h")),
+		AppPort:     getEnv("APP_PORT", "8080"),
+		AppEnv:      getEnv("APP_ENV", "local"),
+		LogLevel:    getEnv("LOG_LEVEL", "info"),
+		DatabaseURL: getEnv("DATABASE_URL", ""),
+		JWTSecret:   getEnv("JWT_SECRET", ""),
+		JWTTTL:      parseDuration(getEnv("JWT_TTL", "24h")),
+
+		SMTPHost:     getEnv("SMTP_HOST", "smtp.mail.ru"),
+		SMTPPort:     getIntEnv("SMTP_PORT", 587),
+		SMTPUsername: getEnv("SMTP_USERNAME", ""),
+		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+		FromEmail:    getEnv("FROM_EMAIL", ""),
+
 		OAuthProvider:      getEnv("OAUTH_PROVIDER", "github"),
 		GithubClientID:     getEnv("GITHUB_CLIENT_ID", ""),
 		GithubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
 		GithubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", ""),
 	}
 
+	// Обязательные проверки
 	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
-	if cfg.JWTSecret == "" {
-		log.Fatal("JWT_SECRET is required and must be at least 32 characters")
+	if cfg.JWTSecret == "" || len(cfg.JWTSecret) < 32 {
+		log.Fatal("JWT_SECRET must be at least 32 characters")
 	}
-	if len(cfg.JWTSecret) < 32 {
-		log.Fatal("JWT_SECRET must be at least 32 characters long")
+	if cfg.SMTPUsername == "" || cfg.SMTPPassword == "" || cfg.FromEmail == "" {
+		log.Fatal("SMTP_USERNAME, SMTP_PASSWORD and FROM_EMAIL are required for email notifications")
 	}
 
 	return cfg
@@ -58,6 +74,15 @@ func Load() *Config {
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getIntEnv(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
 	}
 	return fallback
 }

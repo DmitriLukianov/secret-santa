@@ -7,6 +7,8 @@ import (
 
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
+	"secret-santa-backend/internal/dto"
+	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/oauth"
 	authuc "secret-santa-backend/internal/usecase/auth"
 )
@@ -68,4 +70,55 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"token": jwtToken})
+}
+
+// SendOTP — отправить код на почту (обычный вход)
+func (h *AuthHandler) SendOTP(w http.ResponseWriter, r *http.Request) {
+	var req dto.SendOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	if err := h.uc.SendOTP(r.Context(), req.Email); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Код отправлен на почту",
+	})
+}
+
+// VerifyOTP — проверить код и выдать токен
+func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
+	var req dto.VerifyOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	userID, err := h.uc.VerifyOTP(r.Context(), req.Email, req.Code)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	jwtToken, err := h.jwt.GenerateToken(userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": jwtToken})
 }

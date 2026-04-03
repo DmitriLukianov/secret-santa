@@ -8,6 +8,7 @@ import (
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
+	"secret-santa-backend/internal/usecase"
 
 	"github.com/google/uuid"
 )
@@ -16,22 +17,34 @@ type UseCase struct {
 	repo            Repository
 	participantRepo ParticipantRepository
 	eventRepo       EventRepository
+	userUC          usecase.UserUseCase
+	emailService    usecase.EmailService
 	log             *slog.Logger
 }
 
-func New(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository) *UseCase {
+func New(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository, userUC usecase.UserUseCase) *UseCase {
 	return &UseCase{
 		repo:            repo,
 		participantRepo: participantRepo,
 		eventRepo:       eventRepo,
+		userUC:          userUC,
 	}
 }
 
-func NewWithLogger(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository, log *slog.Logger) *UseCase {
+func NewWithLogger(
+	repo Repository,
+	participantRepo ParticipantRepository,
+	eventRepo EventRepository,
+	userUC usecase.UserUseCase,
+	emailService usecase.EmailService,
+	log *slog.Logger,
+) *UseCase {
 	return &UseCase{
 		repo:            repo,
 		participantRepo: participantRepo,
 		eventRepo:       eventRepo,
+		userUC:          userUC,
+		emailService:    emailService,
 		log:             log,
 	}
 }
@@ -87,10 +100,43 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
 
+	// === УВЕДОМЛЕНИЯ ПРИ ЖЕРЕБЬЁВКЕ ===
+	if uc.emailService != nil && uc.userUC != nil {
+		notified := 0
+		for _, p := range participants {
+			userPtr, err := uc.userUC.GetByID(ctx, p.UserID)
+			if err != nil || userPtr == nil {
+				if uc.log != nil {
+					uc.log.Warn("failed to resolve participant email for draw notification",
+						slog.String("event_id", eventID.String()),
+						slog.String("user_id", p.UserID.String()),
+						slog.String("error", fmt.Sprint(err)),
+					)
+				}
+				continue
+			}
+
+			if err := uc.emailService.SendDrawNotification(ctx, userPtr.Email, eventPtr.Title); err != nil && uc.log != nil {
+				uc.log.Warn("failed to send draw notification",
+					slog.String("event_id", eventID.String()),
+					slog.String("user_id", userPtr.ID.String()),
+					slog.String("email", userPtr.Email),
+					slog.String("error", err.Error()),
+				)
+				continue
+			}
+			notified++
+		}
+		if uc.log != nil {
+			uc.log.Info("draw notifications sent", slog.Int("notified_users", notified))
+		}
+	}
+
 	if uc.log != nil {
 		uc.log.Info("draw completed successfully",
 			slog.String("event_id", eventID.String()),
 			slog.Int("assignments_created", len(assignments)),
+			slog.Int("participants_notified", len(participants)),
 		)
 	}
 
@@ -121,7 +167,6 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		if valid {
 			assignments := make([]entity.Assignment, n)
 			for i := 0; i < n; i++ {
-				// Теперь NewAssignment — чистый DB-first конструктор
 				assignments[i] = entity.NewAssignment(eventID, ids[i], shuffled[i])
 			}
 			return assignments, nil
@@ -141,7 +186,6 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([
 		return nil, fmt.Errorf("failed to get assignments: %w", err)
 	}
 
-	// Возвращаем только назначение текущего пользователя (как Санта)
 	for _, a := range assignments {
 		if a.GiverID == userID {
 			return []entity.Assignment{a}, nil

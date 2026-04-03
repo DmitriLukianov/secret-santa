@@ -2,10 +2,12 @@ package usecase
 
 import (
 	"context"
+	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
+	"secret-santa-backend/internal/oauth"
 
 	"github.com/google/uuid"
 )
@@ -15,6 +17,7 @@ type UserUseCase interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error)
 	GetAll(ctx context.Context) ([]entity.User, error)
+	GetByEmail(ctx context.Context, email string) (*entity.User, error)
 	Update(ctx context.Context, id uuid.UUID, input dto.UpdateUserInput) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
@@ -90,4 +93,23 @@ type AssignmentRepository interface {
 	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 
 	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
+}
+type EmailService interface {
+	SendLoginNotification(ctx context.Context, email, name string) error
+	SendOTP(ctx context.Context, email string) (string, error)
+	SendDrawNotification(ctx context.Context, email, eventTitle string) error
+}
+
+// === НОВОЕ: Репозиторий для OTP-кодов ===
+type VerificationRepository interface {
+	SaveCode(ctx context.Context, email, code string, expiresAt time.Time) error
+	GetValidCode(ctx context.Context, email, code string) (bool, error)
+	MarkAsUsed(ctx context.Context, email, code string) error
+}
+
+// AuthUseCase (обновлённый)
+type AuthUseCase interface {
+	LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error)
+	SendOTP(ctx context.Context, email string) error
+	VerifyOTP(ctx context.Context, email, code string) (string, error)
 }

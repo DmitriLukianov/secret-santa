@@ -42,7 +42,7 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateUserInput) (entit
 				slog.String("error", err.Error()),
 			)
 		}
-		return entity.User{}, err // ошибка уже sentinel из repo
+		return entity.User{}, err
 	}
 
 	if uc.log != nil {
@@ -78,6 +78,17 @@ func (uc *UseCase) GetByOAuthID(ctx context.Context, oauthID, oauthProvider stri
 	return uc.repo.GetByOAuthID(ctx, oauthID, oauthProvider)
 }
 
+// === НОВЫЙ МЕТОД ===
+func (uc *UseCase) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
+	if email == "" {
+		return nil, definitions.ErrInvalidUserInput
+	}
+	if uc.log != nil {
+		uc.log.Info("get user by email started", slog.String("email", email))
+	}
+	return uc.repo.GetByEmail(ctx, email)
+}
+
 func (uc *UseCase) GetAll(ctx context.Context) ([]entity.User, error) {
 	if uc.log != nil {
 		uc.log.Info("get all users started")
@@ -90,9 +101,7 @@ func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateUse
 		return definitions.ErrInvalidUUID
 	}
 	if uc.log != nil {
-		uc.log.Info("update user started",
-			slog.String("user_id", id.String()),
-		)
+		uc.log.Info("update user started", slog.String("user_id", id.String()))
 	}
 	if err := uc.repo.Update(ctx, id, input.Name, input.Email); err != nil {
 		if uc.log != nil {
