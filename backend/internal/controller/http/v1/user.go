@@ -29,12 +29,10 @@ func NewUserHandler(uc usecase.UserUseCase, eventUC usecase.EventUseCase) *UserH
 
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req request.CreateUserRequest
-
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
-
 	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
@@ -47,13 +45,15 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		OAuthProvider: req.OAuthProvider,
 	}
 
-	_, err := h.uc.Create(r.Context(), input)
+	user, err := h.uc.Create(r.Context(), input)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response.UserToResponse(&user))
 }
 
 func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
@@ -70,14 +70,8 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := response.UserResponse{
-		ID:    user.ID.String(),
-		Name:  user.Name,
-		Email: user.Email,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.UserToResponse(user))
 }
 
 func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
@@ -88,17 +82,7 @@ func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
-	var resp []response.UserResponse
-	for _, u := range users {
-		resp = append(resp, response.UserResponse{
-			ID:    u.ID.String(),
-			Name:  u.Name,
-			Email: u.Email,
-		})
-	}
-
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.UsersToResponse(users))
 }
 
 func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -124,8 +108,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Email: req.Email,
 	}
 
-	err = h.uc.Update(r.Context(), id, input)
-	if err != nil {
+	if err := h.uc.Update(r.Context(), id, input); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
@@ -141,8 +124,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.uc.Delete(r.Context(), id)
-	if err != nil {
+	if err := h.uc.Delete(r.Context(), id); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
@@ -163,25 +145,6 @@ func (h *UserHandler) GetMyEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var resp []response.EventResponse
-	for _, e := range events {
-		resp = append(resp, response.EventResponse{
-			ID:              e.ID.String(),
-			Title:           e.Title,
-			Description:     e.Description,
-			Rules:           e.Rules,
-			Recommendations: e.Recommendations,
-			OrganizerID:     e.OrganizerID.String(),
-			StartDate:       e.StartDate,
-			DrawDate:        e.DrawDate,
-			EndDate:         e.EndDate,
-			Status:          string(e.Status),
-			MaxParticipants: e.MaxParticipants,
-			CreatedAt:       e.CreatedAt,
-			UpdatedAt:       e.UpdatedAt,
-		})
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.EventsToResponse(events))
 }

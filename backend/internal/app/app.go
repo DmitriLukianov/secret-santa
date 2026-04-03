@@ -114,6 +114,6 @@ func New() *App {
 }
 
 func (a *App) Run() error {
-	a.log.Info("🚀 Server running on :" + a.cfg.AppPort)
+	a.log.Info("Server running on :" + a.cfg.AppPort)
 	return a.server.ListenAndServe()
 }

@@ -313,7 +313,7 @@ func New() *App {
 }
 
 func (a *App) Run() error {
-	a.log.Info("🚀 Server running on :" + a.cfg.AppPort)
+	a.log.Info("Server running on :" + a.cfg.AppPort)
 	return a.server.ListenAndServe()
 }
 </file>
@@ -376,16 +376,12 @@ func Load() *Config {
 	return cfg
 }
 
-// проверяем, чтобы переменная окружения была задана, если не задана - используем значение fallback
-
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
 }
-
-// преобразуем строку в тип time.Duration, если указано не верно, то по дефолту ставится 24 часа
 
 func parseDuration(s string) time.Duration {
 	d, err := time.ParseDuration(s)
@@ -406,7 +402,7 @@ import (
 	"net/http"
 	"strings"
 
-	"secret-santa-backend/internal/definitions" // ← добавлен импорт
+	"secret-santa-backend/internal/definitions"
 	auth "secret-santa-backend/internal/oauth"
 
 	"github.com/google/uuid"
@@ -463,7 +459,6 @@ import (
 	"secret-santa-backend/internal/controller/http/v1/response"
 )
 
-// RecoveryMiddleware — защищает от panic
 func RecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -486,7 +481,6 @@ import (
 	"time"
 )
 
-// TimeoutMiddleware — ограничивает время запроса
 func TimeoutMiddleware(timeout time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.TimeoutHandler(next, timeout, "request timeout")
@@ -646,23 +640,21 @@ import (
 	"secret-santa-backend/internal/definitions"
 )
 
-// ErrorResponse — единый формат ошибки для всего API
 type ErrorResponse struct {
 	Error string `json:"error"`
 	Code  int    `json:"code"`
 }
 
-// WriteHTTPError — централизованная обработка ошибок
 func WriteHTTPError(w http.ResponseWriter, err error) {
 	if err == nil {
 		return
 	}
 
 	status := http.StatusInternalServerError
-	message := "internal server error" // по умолчанию безопасное сообщение
+	message := "internal server error"
 
 	switch {
-	// ==================== 404 ====================
+
 	case errors.Is(err, definitions.ErrNotFound),
 		errors.Is(err, definitions.ErrEventNotFound),
 		errors.Is(err, definitions.ErrWishlistNotFound),
@@ -672,7 +664,6 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 		message = err.Error()
 
-	// ==================== 403 ====================
 	case errors.Is(err, definitions.ErrForbidden),
 		errors.Is(err, definitions.ErrNotOrganizer),
 		errors.Is(err, definitions.ErrNotSanta),
@@ -680,7 +671,6 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		status = http.StatusForbidden
 		message = err.Error()
 
-	// ==================== 409 ====================
 	case errors.Is(err, definitions.ErrConflict),
 		errors.Is(err, definitions.ErrAlreadyParticipating),
 		errors.Is(err, definitions.ErrDuplicateParticipant),
@@ -688,7 +678,6 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 		message = err.Error()
 
-	// ==================== 400 ====================
 	case errors.Is(err, definitions.ErrInvalidUUID),
 		errors.Is(err, definitions.ErrInvalidOAuthCode),
 		errors.Is(err, definitions.ErrMissingOAuthCode),
@@ -700,9 +689,8 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 		message = err.Error()
 
-	// ==================== fallback ====================
 	default:
-		// логично НЕ отдавать внутренние ошибки клиенту
+
 		status = http.StatusInternalServerError
 	}
 
@@ -717,7 +705,7 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 		Error: message,
 		Code:  status,
 	}); err != nil {
-		// fallback — если даже encode упал
+
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -771,9 +759,6 @@ package response
 
 import "secret-santa-backend/internal/entity"
 
-// =============================================
-// Event
-// =============================================
 func EventToResponse(e *entity.Event) EventResponse {
 	if e == nil {
 		return EventResponse{}
@@ -802,14 +787,11 @@ func EventsToResponse(events []entity.Event) []EventResponse {
 
 	resp := make([]EventResponse, len(events))
 	for i := range events {
-		resp[i] = EventToResponse(&events[i]) // ✅ FIX
+		resp[i] = EventToResponse(&events[i])
 	}
 	return resp
 }
 
-// =============================================
-// User
-// =============================================
 func UserToResponse(u *entity.User) UserResponse {
 	if u == nil {
 		return UserResponse{}
@@ -821,21 +803,18 @@ func UserToResponse(u *entity.User) UserResponse {
 	}
 }
 
-func UsersToResponse(users []*entity.User) []UserResponse {
+func UsersToResponse(users []entity.User) []UserResponse {
 	if users == nil {
 		return nil
 	}
 
 	resp := make([]UserResponse, len(users))
 	for i, u := range users {
-		resp[i] = UserToResponse(u)
+		resp[i] = UserToResponse(&u)
 	}
 	return resp
 }
 
-// =============================================
-// Participant
-// =============================================
 func ParticipantToResponse(p *entity.Participant) ParticipantResponse {
 	if p == nil {
 		return ParticipantResponse{}
@@ -863,9 +842,6 @@ func ParticipantsToResponse(participants []*entity.Participant) []ParticipantRes
 	return resp
 }
 
-// =============================================
-// Wishlist + WishlistItem
-// =============================================
 func WishlistToResponse(w *entity.Wishlist) WishlistResponse {
 	if w == nil {
 		return WishlistResponse{}
@@ -905,9 +881,6 @@ func WishlistItemsToResponse(items []*entity.WishlistItem) []WishlistItemRespons
 	return resp
 }
 
-// =============================================
-// Assignment
-// =============================================
 func AssignmentToResponse(a *entity.Assignment) AssignmentResponse {
 	if a == nil {
 		return AssignmentResponse{}
@@ -1022,7 +995,7 @@ func (h *AssignmentHandler) Draw(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.uc.Draw(r.Context(), eventID, userID); err != nil {
-		response.WriteHTTPError(w, err) // ✅ ВСЁ УБРАЛИ
+		response.WriteHTTPError(w, err)
 		return
 	}
 
@@ -1169,7 +1142,6 @@ func NewChatHandler(uc usecase.ChatUseCase) *ChatHandler {
 	return &ChatHandler{uc: uc}
 }
 
-// GetRecipientChat — чат «Кому я Санта»
 func (h *ChatHandler) GetRecipientChat(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -1194,7 +1166,6 @@ func (h *ChatHandler) GetRecipientChat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.MessagesToResponse(messages))
 }
 
-// GetSenderChat — чат «Кто мой Санта»
 func (h *ChatHandler) GetSenderChat(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -1219,7 +1190,6 @@ func (h *ChatHandler) GetSenderChat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.MessagesToResponse(messages))
 }
 
-// SendMessage — отправить сообщение
 func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -1282,8 +1252,6 @@ type EventHandler struct {
 func NewEventHandler(uc usecase.EventUseCase) *EventHandler {
 	return &EventHandler{uc: uc}
 }
-
-// ==================== CRUD ====================
 
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
@@ -1406,8 +1374,6 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ==================== Статусы ====================
-
 func (h *EventHandler) OpenInvitation(w http.ResponseWriter, r *http.Request) {
 	h.changeStatus(w, r, h.uc.OpenInvitation)
 }
@@ -1481,7 +1447,6 @@ func NewInvitationHandler(uc usecase.InvitationUseCase) *InvitationHandler {
 	return &InvitationHandler{uc: uc}
 }
 
-// GenerateInvite — только для организатора
 func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -1499,8 +1464,7 @@ func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Парсим строку "148h" → time.Duration
-	expiresIn := 7 * 24 * time.Hour // по умолчанию 7 дней
+	expiresIn := 7 * 24 * time.Hour
 	if req.ExpiresIn != "" {
 		if d, err := time.ParseDuration(req.ExpiresIn); err == nil {
 			expiresIn = d
@@ -1526,7 +1490,6 @@ func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(resp)
 }
 
-// JoinByInvite — публичный эндпоинт (роут без AuthMiddleware)
 func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request) {
 	var req request.JoinByInvitationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1538,7 +1501,6 @@ func (h *InvitationHandler) JoinByInvite(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Получаем userID из токена
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrUnauthorized)
@@ -1815,7 +1777,7 @@ import (
 
 type UserHandler struct {
 	uc      usecase.UserUseCase
-	eventUC usecase.EventUseCase // ← НОВОЕ поле
+	eventUC usecase.EventUseCase
 }
 
 func NewUserHandler(uc usecase.UserUseCase, eventUC usecase.EventUseCase) *UserHandler {
@@ -1827,12 +1789,10 @@ func NewUserHandler(uc usecase.UserUseCase, eventUC usecase.EventUseCase) *UserH
 
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req request.CreateUserRequest
-
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
-
 	if err := helpers.ValidateStruct(&req); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
@@ -1845,13 +1805,15 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		OAuthProvider: req.OAuthProvider,
 	}
 
-	_, err := h.uc.Create(r.Context(), input)
+	user, err := h.uc.Create(r.Context(), input)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response.UserToResponse(&user))
 }
 
 func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
@@ -1868,14 +1830,8 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := response.UserResponse{
-		ID:    user.ID.String(),
-		Name:  user.Name,
-		Email: user.Email,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.UserToResponse(user))
 }
 
 func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
@@ -1886,17 +1842,7 @@ func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
-	var resp []response.UserResponse
-	for _, u := range users {
-		resp = append(resp, response.UserResponse{
-			ID:    u.ID.String(),
-			Name:  u.Name,
-			Email: u.Email,
-		})
-	}
-
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.UsersToResponse(users))
 }
 
 func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -1922,8 +1868,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Email: req.Email,
 	}
 
-	err = h.uc.Update(r.Context(), id, input)
-	if err != nil {
+	if err := h.uc.Update(r.Context(), id, input); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
@@ -1939,8 +1884,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.uc.Delete(r.Context(), id)
-	if err != nil {
+	if err := h.uc.Delete(r.Context(), id); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
@@ -1955,33 +1899,14 @@ func (h *UserHandler) GetMyEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	events, err := h.eventUC.GetMyEvents(r.Context(), userID) // ← используем eventUC
+	events, err := h.eventUC.GetMyEvents(r.Context(), userID)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
 
-	var resp []response.EventResponse
-	for _, e := range events {
-		resp = append(resp, response.EventResponse{
-			ID:              e.ID.String(),
-			Title:           e.Title,
-			Description:     e.Description,
-			Rules:           e.Rules,
-			Recommendations: e.Recommendations,
-			OrganizerID:     e.OrganizerID.String(),
-			StartDate:       e.StartDate,
-			DrawDate:        e.DrawDate,
-			EndDate:         e.EndDate,
-			Status:          string(e.Status),
-			MaxParticipants: e.MaxParticipants,
-			CreatedAt:       e.CreatedAt,
-			UpdatedAt:       e.UpdatedAt,
-		})
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.EventsToResponse(events))
 }
 </file>
 
@@ -2014,7 +1939,6 @@ func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.Partic
 	}
 }
 
-// Create — создание вишлиста для текущего пользователя
 func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -2055,7 +1979,6 @@ func (h *WishlistHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.WishlistToResponse(&wishlist))
 }
 
-// GetByParticipant — для Санты (кто мне дарит)
 func (h *WishlistHandler) GetByParticipant(w http.ResponseWriter, r *http.Request) {
 	participantIDStr := chi.URLParam(r, "participantId")
 	participantID, err := uuid.Parse(participantIDStr)
@@ -2091,7 +2014,6 @@ func (h *WishlistHandler) GetByParticipant(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(response.WishlistToResponse(wishlist))
 }
 
-// GetByUser — для владельца (мой вишлист)
 func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -2126,7 +2048,6 @@ func (h *WishlistHandler) GetByUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.WishlistToResponse(wishlist))
 }
 
-// AddItem — добавление товара (только владелец вишлиста)
 func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -2141,14 +2062,12 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем вишлист по ID
 	wishlist, err := h.uc.GetByID(r.Context(), wishlistID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
 		return
 	}
 
-	// Проверяем, что текущий пользователь — владелец вишлиста
 	participant, err := h.participantUC.GetByID(r.Context(), wishlist.ParticipantID)
 	if err != nil || participant.UserID != userID {
 		response.WriteHTTPError(w, definitions.ErrForbidden)
@@ -2176,7 +2095,6 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.WishlistItemToResponse(&item))
 }
 
-// GetItems — получение всех товаров вишлиста
 func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 	wishlistIDStr := chi.URLParam(r, "wishlistId")
 	wishlistID, err := uuid.Parse(wishlistIDStr)
@@ -2200,7 +2118,6 @@ func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// UpdateItem — обновление товара (только владелец)
 func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -2225,14 +2142,12 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем элемент
 	item, err := h.uc.GetItemByID(r.Context(), itemID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
 		return
 	}
 
-	// Получаем вишлист и проверяем владельца
 	wishlist, err := h.uc.GetByID(r.Context(), item.WishlistID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
@@ -2255,7 +2170,6 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.WishlistItemToResponse(&updatedItem))
 }
 
-// DeleteItem — удаление товара (только владелец)
 func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -2270,14 +2184,12 @@ func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем элемент
 	item, err := h.uc.GetItemByID(r.Context(), itemID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
 		return
 	}
 
-	// Получаем вишлист и проверяем владельца
 	wishlist, err := h.uc.GetByID(r.Context(), item.WishlistID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
@@ -2329,7 +2241,6 @@ func NewDB(connString string) (*pgxpool.Pool, error) {
 <file path="internal/definitions/constants.go">
 package definitions
 
-// ====================== EVENT STATUS ======================
 type EventStatus string
 
 const (
@@ -2343,20 +2254,17 @@ const (
 	EventStatusCancelled          EventStatus = "cancelled"
 )
 
-// ====================== PARTICIPANT ROLE ======================
 const (
 	ParticipantRoleOrganizer   = "organizer"
 	ParticipantRoleParticipant = "participant"
 )
 
-// ====================== WISHLIST VISIBILITY ======================
 const (
 	WishlistVisibilityPublic    = "public"
 	WishlistVisibilityFriends   = "friends"
 	WishlistVisibilitySantaOnly = "santa_only"
 )
 
-// ====================== CONTEXT KEYS ======================
 type contextKey string
 
 const (
@@ -2409,7 +2317,6 @@ package dto
 
 import "time"
 
-// CreateEventInput — данные для создания события
 type CreateEventInput struct {
 	Title           string     `json:"title" validate:"required,min=3"`
 	Description     *string    `json:"description"`
@@ -2421,7 +2328,6 @@ type CreateEventInput struct {
 	MaxParticipants int        `json:"maxParticipants" validate:"min=2"`
 }
 
-// UpdateEventInput — partial update (все поля pointer)
 type UpdateEventInput struct {
 	Title           *string    `json:"title"`
 	Description     *string    `json:"description"`
@@ -2433,7 +2339,6 @@ type UpdateEventInput struct {
 	MaxParticipants *int       `json:"maxParticipants"`
 }
 
-// EventResponse — ответ API
 type EventResponse struct {
 	ID              string     `json:"id"`
 	Title           string     `json:"title"`
@@ -2460,21 +2365,18 @@ import (
 	"github.com/google/uuid"
 )
 
-// CreateInvitationInput — данные для генерации приглашения (организатор)
 type CreateInvitationInput struct {
 	EventID   uuid.UUID     `json:"eventId" validate:"required"`
-	ExpiresIn time.Duration `json:"expiresIn"` // например 7 * 24 * time.Hour
+	ExpiresIn time.Duration `json:"expiresIn"`
 }
 
-// JoinByInvitationInput — данные при переходе по ссылке
 type JoinByInvitationInput struct {
 	Token  string    `json:"token" validate:"required"`
-	UserID uuid.UUID `json:"-"` // заполняется из middleware
+	UserID uuid.UUID `json:"-"`
 }
 
-// InvitationResponse — ответ при генерации ссылки
 type InvitationResponse struct {
-	InviteURL string    `json:"inviteUrl"` // полная ссылка для приглашения
+	InviteURL string    `json:"inviteUrl"`
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
@@ -2492,30 +2394,18 @@ type AddParticipantInput struct {
 <file path="internal/dto/user.go">
 package dto
 
-import (
-	"time"
-
-	"github.com/google/uuid"
-)
-
+// CreateUserInput — входные данные для создания пользователя (из OAuth)
 type CreateUserInput struct {
 	Name          string `json:"name" validate:"required,min=2"`
 	Email         string `json:"email" validate:"required,email"`
 	OAuthID       string `json:"oauthId" validate:"required"`
-	OAuthProvider string `json:"oauthProvider" validate:"required,oneof=vk google github"`
+	OAuthProvider string `json:"oauthProvider" validate:"required,oneof=github vk google"`
 }
 
+// UpdateUserInput — входные данные для обновления профиля
 type UpdateUserInput struct {
 	Name  *string `json:"name" validate:"omitempty,min=2"`
 	Email *string `json:"email" validate:"omitempty,email"`
-}
-
-type UserResponse struct { // новый — для ответов API
-	ID            uuid.UUID `json:"id"`
-	Name          string    `json:"name"`
-	Email         string    `json:"email"`
-	OAuthProvider string    `json:"oauthProvider"`
-	CreatedAt     time.Time `json:"createdAt"`
 }
 </file>
 
@@ -2595,7 +2485,6 @@ type Event struct {
 	UpdatedAt       time.Time               `db:"updated_at"`
 }
 
-// NewEvent создаёт событие в статусе draft
 func NewEvent(
 	title string,
 	organizerID uuid.UUID,
@@ -2623,7 +2512,6 @@ func NewEvent(
 	}
 }
 
-// CanTransitionTo — проверяет возможность перехода
 func (e Event) CanTransitionTo(newStatus definitions.EventStatus) bool {
 	switch e.Status {
 	case definitions.EventStatusDraft:
@@ -2643,17 +2531,14 @@ func (e Event) CanTransitionTo(newStatus definitions.EventStatus) bool {
 	}
 }
 
-// TransitionTo — выполняет переход статуса с проверкой
 func (e *Event) TransitionTo(newStatus definitions.EventStatus) error {
 	if !e.CanTransitionTo(newStatus) {
-		return definitions.ErrInvalidEventState // ← используем из definitions
+		return definitions.ErrInvalidEventState
 	}
 	e.Status = newStatus
 	e.UpdatedAt = time.Now()
 	return nil
 }
-
-// ====================== Вспомогательные методы ======================
 
 func (e Event) IsDrawable() bool {
 	return e.Status == definitions.EventStatusRegistrationClosed || e.Status == definitions.EventStatusDrawingPending
@@ -2708,7 +2593,6 @@ func NewInvitation(eventID, createdBy uuid.UUID, expiresIn time.Duration) Invita
 	}
 }
 
-// IsValid — теперь только проверка по времени (многоразовая ссылка)
 func (i Invitation) IsValid() bool {
 	return time.Now().Before(i.ExpiresAt)
 }
@@ -2751,7 +2635,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	// ← добавлен импорт
 )
 
 type Participant struct {
@@ -2799,15 +2682,11 @@ type User struct {
 }
 
 func NewUser(name, email, oauthID, oauthProvider string) User {
-	now := time.Now()
 	return User{
-		ID:            uuid.New(),
 		Name:          name,
 		Email:         email,
 		OAuthID:       oauthID,
 		OAuthProvider: oauthProvider,
-		CreatedAt:     now,
-		UpdatedAt:     now,
 	}
 }
 </file>
@@ -2819,7 +2698,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	// ← добавлен импорт
 )
 
 type Wishlist struct {
@@ -2872,12 +2750,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"secret-santa-backend/internal/definitions" // ← добавлен импорт
+	"secret-santa-backend/internal/definitions"
 
 	"github.com/google/uuid"
 )
 
-// GetUserID — типизированный доступ к userID из контекста
 func GetUserID(r *http.Request) (uuid.UUID, error) {
 	val := r.Context().Value(definitions.UserIDKey)
 	if val == nil {
@@ -2898,8 +2775,6 @@ package helpers
 
 import "strings"
 
-// IsDuplicateError проверяет, является ли ошибка нарушением уникального ключа в PostgreSQL
-// (SQLSTATE 23505 — unique_violation)
 func IsDuplicateError(err error) bool {
 	if err == nil {
 		return false
@@ -2914,12 +2789,10 @@ func IsDuplicateError(err error) bool {
 <file path="internal/helpers/ptr.go">
 package helpers
 
-// ToPtr возвращает указатель на значение
 func ToPtr[T any](v T) *T {
 	return &v
 }
 
-// FromPtr возвращает значение по указателю или значение по умолчанию
 func FromPtr[T any](v *T) T {
 	if v == nil {
 		var zero T
@@ -3320,27 +3193,23 @@ func (r *Repository) DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 	return err
 }
 
-// FIXED: новая атомарная операция — вся жеребьёвка в одной транзакции
 func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) // в случае ошибки будет откат
+	defer tx.Rollback(ctx)
 
-	// 1. Удаляем старые назначения
 	if err := r.deleteByEventTx(ctx, tx, eventID); err != nil {
 		return fmt.Errorf("failed to delete old assignments: %w", err)
 	}
 
-	// 2. Создаём новые назначения
 	for _, a := range assignments {
 		if err := r.createTx(ctx, tx, a); err != nil {
 			return fmt.Errorf("failed to create assignment: %w", err)
 		}
 	}
 
-	// 3. Обновляем статус события
 	if err := r.updateEventStatusTx(ctx, tx, eventID, newStatus); err != nil {
 		return fmt.Errorf("failed to update event status: %w", err)
 	}
@@ -3352,7 +3221,6 @@ func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, a
 	return nil
 }
 
-// Вспомогательные методы внутри транзакции
 func (r *Repository) deleteByEventTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID) error {
 	query := deleteAssignmentsByEventQuery(eventID.String())
 	sql, args, err := query.ToSql()
@@ -3376,8 +3244,7 @@ func (r *Repository) createTx(ctx context.Context, tx pgx.Tx, a entity.Assignmen
 }
 
 func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, status definitions.EventStatus) error {
-	// Используем тот же query-builder, что и в event repo (можно вынести в общий helper при желании)
-	// Здесь для минимальности используем прямой SQL
+
 	_, err := tx.Exec(ctx, `
 		UPDATE events 
 		SET status = $1, updated_at = now() 
@@ -3632,7 +3499,6 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-// Create
 func (r *Repository) Create(ctx context.Context, e entity.Event) error {
 	query, args, err := createEventQuery().
 		Values(
@@ -3659,7 +3525,6 @@ func (r *Repository) Create(ctx context.Context, e entity.Event) error {
 	return err
 }
 
-// GetByID
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	query, args, err := getEventQuery().
 		Where("id = ?", id).
@@ -3672,7 +3537,6 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, 
 	return ScanEvent(row)
 }
 
-// GetAll
 func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	query, args, err := listEventsQuery().ToSql()
 	if err != nil {
@@ -3688,7 +3552,6 @@ func (r *Repository) GetAll(ctx context.Context) ([]entity.Event, error) {
 	return ScanEvents(rows)
 }
 
-// Update
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
 	q := updateEventQuery().Set("updated_at", "NOW()")
 
@@ -3726,7 +3589,6 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateE
 	return err
 }
 
-// UpdateStatus
 func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error {
 	query, args, err := updateEventQuery().
 		Set("status", status).
@@ -3741,7 +3603,6 @@ func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status defi
 	return err
 }
 
-// Delete
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	query, args, err := deleteEventQuery().
 		Where("id = ?", id).
@@ -3754,7 +3615,6 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-// GetEventsForUser — теперь тоже через queries.go
 func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
 	query, args, err := getEventsForUserQuery().
 		Where(squirrel.Or{
@@ -4132,14 +3992,14 @@ import (
 
 var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
-// GetByID — запрос для получения пользователя по ID
+// GetByID возвращает запрос для получения пользователя по ID
 func GetByID(id uuid.UUID) squirrel.SelectBuilder {
 	return qb.Select("id", "name", "email", "oauth_id", "oauth_provider", "created_at", "updated_at").
 		From("users").
 		Where(squirrel.Eq{"id": id})
 }
 
-// GetByOAuthID — запрос для поиска по OAuth
+// GetByOAuthID возвращает запрос для поиска по OAuth-провайдеру
 func GetByOAuthID(oauthID, oauthProvider string) squirrel.SelectBuilder {
 	return qb.Select("id", "name", "email", "oauth_id", "oauth_provider", "created_at", "updated_at").
 		From("users").
@@ -4149,33 +4009,34 @@ func GetByOAuthID(oauthID, oauthProvider string) squirrel.SelectBuilder {
 		})
 }
 
-// GetByEmail — запрос по email
+// GetByEmail возвращает запрос по email
 func GetByEmail(email string) squirrel.SelectBuilder {
 	return qb.Select("id", "name", "email", "oauth_id", "oauth_provider", "created_at", "updated_at").
 		From("users").
 		Where(squirrel.Eq{"email": email})
 }
 
-// GetAll — запрос для получения всех пользователей
+// GetAll возвращает запрос на всех пользователей
 func GetAll() squirrel.SelectBuilder {
 	return qb.Select("id", "name", "email", "oauth_id", "oauth_provider", "created_at", "updated_at").
 		From("users")
 }
 
-// Create — запрос на создание пользователя
+// Create возвращает INSERT с RETURNING — обязательно для получения данных из БД
 func Create() squirrel.InsertBuilder {
 	return qb.Insert("users").
 		Columns("name", "email", "oauth_id", "oauth_provider").
 		Suffix("RETURNING id, name, email, oauth_id, oauth_provider, created_at, updated_at")
 }
 
-// Update — запрос на частичное обновление
+// Update возвращает UPDATE с автоматическим обновлением updated_at
 func Update(id uuid.UUID) squirrel.UpdateBuilder {
 	return qb.Update("users").
+		Set("updated_at", squirrel.Expr("NOW()")).
 		Where(squirrel.Eq{"id": id})
 }
 
-// Delete — запрос на удаление
+// Delete возвращает DELETE builder
 func Delete(id uuid.UUID) squirrel.DeleteBuilder {
 	return qb.Delete("users").
 		Where(squirrel.Eq{"id": id})
@@ -4202,16 +4063,23 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, user entity.User) error {
+// Create создаёт пользователя и возвращает полностью заполненную сущность из БД
+func (r *Repository) Create(ctx context.Context, user entity.User) (entity.User, error) {
 	query := Create().
 		Values(user.Name, user.Email, user.OAuthID, user.OAuthProvider)
 
 	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.User{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, sql, args...)
+	returnedUser, err := scanUser(row)
+	if err != nil {
+		return entity.User{}, err
+	}
+
+	return *returnedUser, nil
 }
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
@@ -4266,6 +4134,7 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, name, email *stri
 	if email != nil {
 		query = query.Set("email", *email)
 	}
+
 	sql, args, err := query.ToSql()
 	if err != nil {
 		return err
@@ -4294,7 +4163,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// scanWishlist — сканирует одну строку вишлиста
 func scanWishlist(row pgx.Row) (*entity.Wishlist, error) {
 	var w entity.Wishlist
 	err := row.Scan(
@@ -4310,7 +4178,6 @@ func scanWishlist(row pgx.Row) (*entity.Wishlist, error) {
 	return &w, nil
 }
 
-// scanWishlistItems — сканирует несколько элементов вишлиста
 func scanWishlistItems(rows pgx.Rows) ([]entity.WishlistItem, error) {
 	var items []entity.WishlistItem
 	for rows.Next() {
@@ -4332,7 +4199,6 @@ func scanWishlistItems(rows pgx.Rows) ([]entity.WishlistItem, error) {
 	return items, nil
 }
 
-// scanWishlistItem — сканирует ОДИН элемент вишлиста (нужен для GetItemByID)
 func scanWishlistItem(row pgx.Row) (*entity.WishlistItem, error) {
 	var item entity.WishlistItem
 	err := row.Scan(
@@ -4392,7 +4258,6 @@ func deleteWishlistItemQuery(itemID string) squirrel.DeleteBuilder {
 		Where(squirrel.Eq{"id": itemID})
 }
 
-// getWishlistItemByIDQuery — запрос для получения одного элемента по ID
 func getWishlistItemByIDQuery(itemID uuid.UUID) squirrel.SelectBuilder {
 	return qb.Select(
 		"id", "wishlist_id", "title", "link", "image_url", "comment", "created_at",
@@ -4401,7 +4266,6 @@ func getWishlistItemByIDQuery(itemID uuid.UUID) squirrel.SelectBuilder {
 		Where(squirrel.Eq{"id": itemID})
 }
 
-// getWishlistByIDQuery — запрос вишлиста по его ID
 func getWishlistByIDQuery(wishlistID uuid.UUID) squirrel.SelectBuilder {
 	return qb.Select("id", "participant_id", "visibility", "created_at", "updated_at").
 		From("wishlists").
@@ -4433,7 +4297,7 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
-	// 🔥 КРИТИЧЕСКИЙ ФИКС: проверяем, что вишлист для этого участника ещё не существует
+
 	existing, err := r.GetByParticipant(ctx, w.ParticipantID)
 	if err == nil && existing != nil {
 		return fmt.Errorf("wishlist already exists for participant %s: %w", w.ParticipantID, definitions.ErrConflict)
@@ -4492,7 +4356,7 @@ func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title str
 		Set("link", link).
 		Set("image_url", imageURL).
 		Set("comment", comment).
-		Set("created_at", time.Now()) // или updated_at, если добавишь поле
+		Set("created_at", time.Now())
 
 	sql, args, err := query.ToSql()
 	if err != nil {
@@ -4502,7 +4366,6 @@ func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title str
 	return err
 }
 
-// NEW: удаление товара
 func (r *Repository) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 	query := deleteWishlistItemQuery(itemID.String())
 	sql, args, err := query.ToSql()
@@ -4513,7 +4376,6 @@ func (r *Repository) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 	return err
 }
 
-// GetItemByID — возвращает один элемент вишлиста по ID
 func (r *Repository) GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.WishlistItem, error) {
 	if itemID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -4529,13 +4391,12 @@ func (r *Repository) GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity
 	return scanWishlistItem(row)
 }
 
-// GetByID — возвращает вишлист по его ID
 func (r *Repository) GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error) {
 	if wishlistID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
 	}
 
-	query := getWishlistByIDQuery(wishlistID) // будет в queries.go
+	query := getWishlistByIDQuery(wishlistID)
 	sql, args, err := query.ToSql()
 	if err != nil {
 		return nil, err
@@ -4563,7 +4424,6 @@ type Repository interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
 	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 
-	// FIXED: новый метод — вся жеребьёвка в одной атомарной транзакции
 	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
 }
 
@@ -4616,7 +4476,6 @@ func NewWithLogger(repo Repository, participantRepo ParticipantRepository, event
 	}
 }
 
-// Draw — запускает жеребьёвку (только организатор)
 func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 	if uc.log != nil {
 		uc.log.Info("draw started",
@@ -4629,7 +4488,6 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return definitions.ErrInvalidUserInput
 	}
 
-	// 1. Получаем событие
 	eventPtr, err := uc.eventRepo.GetByID(ctx, eventID)
 	if err != nil {
 		if uc.log != nil {
@@ -4638,12 +4496,10 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
 	}
 
-	// 2. Проверяем, что это организатор
 	if eventPtr.OrganizerID != userID {
 		return definitions.ErrNotOrganizer
 	}
 
-	// 3. Проверяем статус события
 	if !eventPtr.IsDrawable() {
 		if uc.log != nil {
 			uc.log.Warn("draw not allowed due to status",
@@ -4653,7 +4509,6 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return definitions.ErrInvalidEventState
 	}
 
-	// 4. Получаем участников
 	participants, err := uc.participantRepo.GetByEvent(ctx, eventID)
 	if err != nil {
 		return fmt.Errorf("failed to get participants: %w", err)
@@ -4663,13 +4518,11 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return definitions.ErrNotEnoughParticipants
 	}
 
-	// 5. Генерируем новую жеребьёвку (derangement)
 	assignments, err := uc.createDerangement(eventID, participants)
 	if err != nil {
 		return fmt.Errorf("failed to create derangement: %w", err)
 	}
 
-	// FIXED: вся жеребьёвка теперь в одной атомарной транзакции
 	if err := uc.repo.TransactionalDraw(ctx, eventID, assignments, definitions.EventStatusDrawingDone); err != nil {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
@@ -4684,7 +4537,6 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 	return nil
 }
 
-// createDerangement — улучшенный алгоритм (никто не дарит себе)
 func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Participant) ([]entity.Assignment, error) {
 	n := len(participants)
 	ids := make([]uuid.UUID, n)
@@ -4718,7 +4570,6 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 	return nil, fmt.Errorf("failed to generate valid derangement after %d attempts", maxAttempts)
 }
 
-// GetByEvent — возвращает ТОЛЬКО свою пару
 func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {
 	if eventID == uuid.Nil || userID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -4780,15 +4631,17 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", definitions.ErrMissingOAuthCode
 	}
 
+	// Сначала пытаемся найти существующего пользователя
 	user, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
 	if err == nil && user != nil {
 		if uc.log != nil {
-			uc.log.Info("oauth user found", slog.String("user_id", user.ID.String()))
+			uc.log.Info("existing oauth user found", slog.String("user_id", user.ID.String()))
 		}
 		return user.ID.String(), nil
 	}
 
-	if err != nil && !errors.Is(err, definitions.ErrUserNotFound) {
+	// Если пользователя нет — создаём нового
+	if !errors.Is(err, definitions.ErrUserNotFound) && err != nil {
 		return "", fmt.Errorf("failed to lookup oauth user: %w", err)
 	}
 
@@ -4799,20 +4652,16 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		OAuthProvider: info.Provider,
 	}
 
-	if _, err = uc.userUC.Create(ctx, createInput); err != nil {
+	createdUser, err := uc.userUC.Create(ctx, createInput)
+	if err != nil {
 		return "", fmt.Errorf("failed to create user: %w", err)
 	}
 
-	savedUser, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
-	if err != nil {
-		return "", fmt.Errorf("failed to get saved user after creation: %w", err)
-	}
-
 	if uc.log != nil {
-		uc.log.Info("new oauth user created", slog.String("user_id", savedUser.ID.String()))
+		uc.log.Info("new oauth user created", slog.String("user_id", createdUser.ID.String()))
 	}
 
-	return savedUser.ID.String(), nil
+	return createdUser.ID.String(), nil
 }
 </file>
 
@@ -5349,12 +5198,10 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 		return definitions.ErrNotFound
 	}
 
-	// Проверка срока действия
 	if !inv.IsValid() {
 		return definitions.ErrInvalidEventState
 	}
 
-	// Проверка статуса события
 	event, err := uc.eventRepo.GetByID(ctx, inv.EventID)
 	if err != nil {
 		return err
@@ -5363,8 +5210,6 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 	if !event.CanAddParticipants() {
 		return definitions.ErrInvalidEventState
 	}
-
-	// Добавляем участника через usecase
 	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		return err
@@ -5428,9 +5273,6 @@ func NewWithLogger(repo Repository, log *slog.Logger) *UseCase {
 	return &UseCase{repo: repo, log: log}
 }
 
-// Create — добавляет участника в событие
-// Create — добавляет участника в событие
-// Create — добавляет участника в событие
 func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error) {
 	if uc.log != nil {
 		uc.log.Info("create participant started",
@@ -5451,7 +5293,6 @@ func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role s
 			uc.log.Error("failed to create participant", slog.String("error", err.Error()))
 		}
 
-		// Используем helper из пакета helpers
 		if helpers.IsDuplicateError(err) {
 			return entity.Participant{}, definitions.ErrAlreadyParticipating
 		}
@@ -5546,9 +5387,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// Repository — интерфейс, который должен реализовывать postgres-репозиторий
 type Repository interface {
-	Create(ctx context.Context, user entity.User) error
+	Create(ctx context.Context, user entity.User) (entity.User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error)
 	GetAll(ctx context.Context) ([]entity.User, error)
@@ -5563,9 +5403,9 @@ package user
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
 
@@ -5585,67 +5425,40 @@ func NewWithLogger(repo Repository, log *slog.Logger) *UseCase {
 	return &UseCase{repo: repo, log: log}
 }
 
-// Create
 func (uc *UseCase) Create(ctx context.Context, input dto.CreateUserInput) (entity.User, error) {
 	if uc.log != nil {
 		uc.log.Info("create user started",
-			slog.Any("email", input.Email),
-			slog.Any("oauth_provider", input.OAuthProvider),
+			slog.String("email", input.Email),
+			slog.String("oauth_provider", input.OAuthProvider),
 		)
-	}
-
-	if err := uc.validateCreateInput(input); err != nil {
-		if uc.log != nil {
-			uc.log.Warn("create user validation failed",
-				slog.Any("email", input.Email),
-				slog.String("error", err.Error()),
-			)
-		}
-		return entity.User{}, err
 	}
 
 	user := entity.NewUser(input.Name, input.Email, input.OAuthID, input.OAuthProvider)
 
-	if err := uc.repo.Create(ctx, user); err != nil {
+	createdUser, err := uc.repo.Create(ctx, user)
+	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create user",
-				slog.String("email", user.Email),
+				slog.String("email", input.Email),
 				slog.String("error", err.Error()),
 			)
 		}
-		return entity.User{}, fmt.Errorf("failed to create user: %w", err)
+		return entity.User{}, err // ошибка уже sentinel из repo
 	}
 
 	if uc.log != nil {
 		uc.log.Info("user created successfully",
-			slog.String("user_id", user.ID.String()),
-			slog.String("email", user.Email),
+			slog.String("user_id", createdUser.ID.String()),
+			slog.String("email", createdUser.Email),
 		)
 	}
 
-	return user, nil
+	return createdUser, nil
 }
 
-func (uc *UseCase) validateCreateInput(input dto.CreateUserInput) error {
-	if input.Name == "" {
-		return fmt.Errorf("name is required")
-	}
-	if input.Email == "" {
-		return fmt.Errorf("email is required")
-	}
-	if input.OAuthID == "" {
-		return fmt.Errorf("oauthId is required")
-	}
-	if input.OAuthProvider == "" {
-		return fmt.Errorf("oauthProvider is required")
-	}
-	return nil
-}
-
-// GetByID
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
 	if id == uuid.Nil {
-		return nil, fmt.Errorf("id is required")
+		return nil, definitions.ErrInvalidUUID
 	}
 	if uc.log != nil {
 		uc.log.Info("get user by id started", slog.String("user_id", id.String()))
@@ -5653,10 +5466,9 @@ func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, err
 	return uc.repo.GetByID(ctx, id)
 }
 
-// GetByOAuthID
 func (uc *UseCase) GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error) {
 	if oauthID == "" || oauthProvider == "" {
-		return nil, fmt.Errorf("oauthId and oauthProvider are required")
+		return nil, definitions.ErrInvalidUserInput
 	}
 	if uc.log != nil {
 		uc.log.Info("get user by oauth started",
@@ -5667,7 +5479,6 @@ func (uc *UseCase) GetByOAuthID(ctx context.Context, oauthID, oauthProvider stri
 	return uc.repo.GetByOAuthID(ctx, oauthID, oauthProvider)
 }
 
-// GetAll
 func (uc *UseCase) GetAll(ctx context.Context) ([]entity.User, error) {
 	if uc.log != nil {
 		uc.log.Info("get all users started")
@@ -5675,24 +5486,18 @@ func (uc *UseCase) GetAll(ctx context.Context) ([]entity.User, error) {
 	return uc.repo.GetAll(ctx)
 }
 
-// Update
 func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateUserInput) error {
 	if id == uuid.Nil {
-		return fmt.Errorf("id is required")
+		return definitions.ErrInvalidUUID
 	}
 	if uc.log != nil {
 		uc.log.Info("update user started",
 			slog.String("user_id", id.String()),
-			slog.Any("name", input.Name),
-			slog.Any("email", input.Email),
 		)
 	}
 	if err := uc.repo.Update(ctx, id, input.Name, input.Email); err != nil {
 		if uc.log != nil {
-			uc.log.Error("failed to update user",
-				slog.String("user_id", id.String()),
-				slog.String("error", err.Error()),
-			)
+			uc.log.Error("failed to update user", slog.String("user_id", id.String()), slog.String("error", err.Error()))
 		}
 		return err
 	}
@@ -5702,20 +5507,16 @@ func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateUse
 	return nil
 }
 
-// Delete
 func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
 	if id == uuid.Nil {
-		return fmt.Errorf("id is required")
+		return definitions.ErrInvalidUUID
 	}
 	if uc.log != nil {
 		uc.log.Info("delete user started", slog.String("user_id", id.String()))
 	}
 	if err := uc.repo.Delete(ctx, id); err != nil {
 		if uc.log != nil {
-			uc.log.Error("failed to delete user",
-				slog.String("user_id", id.String()),
-				slog.String("error", err.Error()),
-			)
+			uc.log.Error("failed to delete user", slog.String("user_id", id.String()), slog.String("error", err.Error()))
 		}
 		return err
 	}
@@ -5741,15 +5542,13 @@ type Repository interface {
 	Create(ctx context.Context, wishlist entity.Wishlist) error
 	CreateItem(ctx context.Context, item entity.WishlistItem) error
 	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
-	GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error) // ← НОВЫЙ
+	GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
 	GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.WishlistItem, error)
 	UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) error
 	DeleteItem(ctx context.Context, itemID uuid.UUID) error
 }
 
-// FIXED: добавили ParticipantRepository, чтобы получить UserID участника
-// (нужно для корректной проверки "являешься ли ты Сантой")
 type ParticipantRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
 }
@@ -5795,7 +5594,6 @@ func NewWithLogger(repo Repository, participantRepo ParticipantRepository, assig
 	}
 }
 
-// Create — создаёт вишлист для участника
 func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibility string) (entity.Wishlist, error) {
 	if uc.log != nil {
 		uc.log.Info("create wishlist started",
@@ -5826,7 +5624,6 @@ func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibili
 	return wishlist, nil
 }
 
-// AddItem — добавляет элемент в вишлист
 func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
 	if uc.log != nil {
 		uc.log.Info("add wishlist item started",
@@ -5881,7 +5678,6 @@ func (uc *UseCase) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity
 	return uc.repo.GetItems(ctx, wishlistID)
 }
 
-// GetForUser — возвращает вишлист только если requester является Сантой
 func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error) {
 	if eventID == uuid.Nil || participantID == uuid.Nil || requesterID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -5895,7 +5691,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		)
 	}
 
-	// 1. Получаем вишлист
 	wishlist, err := uc.repo.GetByParticipant(ctx, participantID)
 	if err != nil {
 		if uc.log != nil {
@@ -5910,7 +5705,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		return nil, fmt.Errorf("wishlist not found: %w", err)
 	}
 
-	// 2. Получаем участника (чтобы узнать реальный UserID получателя)
 	participant, err := uc.participantRepo.GetByID(ctx, participantID)
 	if err != nil {
 		if uc.log != nil {
@@ -5929,7 +5723,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		)
 	}
 
-	// 3. Получаем все назначения события
 	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
 	if err != nil {
 		if uc.log != nil {
@@ -5941,7 +5734,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		return nil, fmt.Errorf("failed to check assignment: %w", err)
 	}
 
-	// 4. Проверяем, является ли requester Сантой для этого получателя
 	isSanta := false
 	for _, a := range assignments {
 		if a.GiverID == requesterID && a.ReceiverID == participant.UserID {
@@ -5978,7 +5770,6 @@ func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title strin
 		)
 	}
 
-	// Сначала получаем текущий item, чтобы вернуть обновлённый
 	item := entity.WishlistItem{ID: itemID, Title: title, Link: link, ImageURL: imageURL, Comment: comment}
 
 	if err := uc.repo.UpdateItem(ctx, itemID, title, link, imageURL, comment); err != nil {
@@ -6012,7 +5803,6 @@ func (uc *UseCase) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 	return nil
 }
 
-// GetItemByID — возвращает элемент вишлиста по его ID
 func (uc *UseCase) GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.WishlistItem, error) {
 	if itemID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -6036,7 +5826,6 @@ func (uc *UseCase) GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.W
 	return nil, definitions.ErrWishlistNotFound
 }
 
-// GetByID — возвращает вишлист по его ID
 func (uc *UseCase) GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error) {
 	if wishlistID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -6160,10 +5949,9 @@ DROP TABLE IF EXISTS users;
 -- +goose Up
 -- +goose StatementBegin
 
--- Расширение для UUID
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- ==================== USERS ====================
+-- USERS
 CREATE TABLE IF NOT EXISTS users (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            TEXT NOT NULL,
@@ -6183,7 +5971,7 @@ COMMENT ON COLUMN users.oauth_provider IS 'Название провайдера
 COMMENT ON COLUMN users.created_at IS 'Дата создания записи';
 COMMENT ON COLUMN users.updated_at IS 'Дата последнего обновления записи';
 
--- ==================== EVENTS ====================
+-- EVENTS 
 CREATE TABLE IF NOT EXISTS events (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title               TEXT NOT NULL,
@@ -6215,7 +6003,7 @@ COMMENT ON COLUMN events.max_participants IS 'Максимальное коли�
 COMMENT ON COLUMN events.created_at IS 'Дата создания события';
 COMMENT ON COLUMN events.updated_at IS 'Дата последнего обновления события';
 
--- ==================== PARTICIPANTS ====================
+-- PARTICIPANTS
 CREATE TABLE IF NOT EXISTS participants (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id      UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -6238,7 +6026,7 @@ COMMENT ON COLUMN participants.gift_sent_at IS 'Когда отметили от
 COMMENT ON COLUMN participants.created_at IS 'Дата добавления участника';
 COMMENT ON COLUMN participants.updated_at IS 'Дата последнего обновления участника';
 
--- ==================== ASSIGNMENTS ====================
+-- ASSIGNMENTS 
 CREATE TABLE IF NOT EXISTS assignments (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id     UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -6255,7 +6043,7 @@ COMMENT ON COLUMN assignments.giver_id IS 'Кто дарит (Санта)';
 COMMENT ON COLUMN assignments.receiver_id IS 'Кому дарит';
 COMMENT ON COLUMN assignments.created_at IS 'Дата создания назначения';
 
--- ==================== WISHLISTS ====================
+-- WISHLISTS 
 CREATE TABLE IF NOT EXISTS wishlists (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     participant_id  UUID NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
@@ -6271,7 +6059,7 @@ COMMENT ON COLUMN wishlists.visibility IS 'Видимость (public, friends, 
 COMMENT ON COLUMN wishlists.created_at IS 'Дата создания вишлиста';
 COMMENT ON COLUMN wishlists.updated_at IS 'Дата последнего обновления вишлиста';
 
--- ==================== WISHLIST ITEMS ====================
+-- WISHLIST ITEMS 
 CREATE TABLE IF NOT EXISTS wishlist_items (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     wishlist_id  UUID NOT NULL REFERENCES wishlists(id) ON DELETE CASCADE,
@@ -6291,7 +6079,7 @@ COMMENT ON COLUMN wishlist_items.image_url IS 'Ссылка на изображ�
 COMMENT ON COLUMN wishlist_items.comment IS 'Комментарий пользователя';
 COMMENT ON COLUMN wishlist_items.created_at IS 'Дата добавления товара';
 
--- ==================== INVITATIONS ====================
+-- INVITATIONS 
 CREATE TABLE IF NOT EXISTS invitations (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -6311,7 +6099,7 @@ COMMENT ON COLUMN invitations.created_by IS 'Организатор, котор�
 COMMENT ON COLUMN invitations.created_at IS 'Дата создания';
 COMMENT ON COLUMN invitations.updated_at IS 'Дата последнего обновления';
 
--- ==================== MESSAGES ====================
+-- MESSAGES 
 CREATE TABLE IF NOT EXISTS messages (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,

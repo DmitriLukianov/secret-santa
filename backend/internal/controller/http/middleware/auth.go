@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"secret-santa-backend/internal/definitions" // ← добавлен импорт
+	"secret-santa-backend/internal/definitions"
 	auth "secret-santa-backend/internal/oauth"
 
 	"github.com/google/uuid"

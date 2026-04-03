@@ -38,15 +38,17 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", definitions.ErrMissingOAuthCode
 	}
 
+	// Сначала пытаемся найти существующего пользователя
 	user, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
 	if err == nil && user != nil {
 		if uc.log != nil {
-			uc.log.Info("oauth user found", slog.String("user_id", user.ID.String()))
+			uc.log.Info("existing oauth user found", slog.String("user_id", user.ID.String()))
 		}
 		return user.ID.String(), nil
 	}
 
-	if err != nil && !errors.Is(err, definitions.ErrUserNotFound) {
+	// Если пользователя нет — создаём нового
+	if !errors.Is(err, definitions.ErrUserNotFound) && err != nil {
 		return "", fmt.Errorf("failed to lookup oauth user: %w", err)
 	}
 
@@ -57,18 +59,14 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		OAuthProvider: info.Provider,
 	}
 
-	if _, err = uc.userUC.Create(ctx, createInput); err != nil {
+	createdUser, err := uc.userUC.Create(ctx, createInput)
+	if err != nil {
 		return "", fmt.Errorf("failed to create user: %w", err)
 	}
 
-	savedUser, err := uc.userUC.GetByOAuthID(ctx, info.ID, info.Provider)
-	if err != nil {
-		return "", fmt.Errorf("failed to get saved user after creation: %w", err)
-	}
-
 	if uc.log != nil {
-		uc.log.Info("new oauth user created", slog.String("user_id", savedUser.ID.String()))
+		uc.log.Info("new oauth user created", slog.String("user_id", createdUser.ID.String()))
 	}
 
-	return savedUser.ID.String(), nil
+	return createdUser.ID.String(), nil
 }

@@ -9,7 +9,7 @@ import (
 )
 
 type Repository interface {
-	Create(ctx context.Context, user entity.User) error
+	Create(ctx context.Context, user entity.User) (entity.User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	GetByOAuthID(ctx context.Context, oauthID, oauthProvider string) (*entity.User, error)
 	GetAll(ctx context.Context) ([]entity.User, error)

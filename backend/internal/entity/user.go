@@ -17,14 +17,10 @@ type User struct {
 }
 
 func NewUser(name, email, oauthID, oauthProvider string) User {
-	now := time.Now()
 	return User{
-		ID:            uuid.New(),
 		Name:          name,
 		Email:         email,
 		OAuthID:       oauthID,
 		OAuthProvider: oauthProvider,
-		CreatedAt:     now,
-		UpdatedAt:     now,
 	}
 }

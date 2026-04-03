@@ -33,7 +33,6 @@ func NewInvitation(eventID, createdBy uuid.UUID, expiresIn time.Duration) Invita
 	}
 }
 
-// IsValid — теперь только проверка по времени (многоразовая ссылка)
 func (i Invitation) IsValid() bool {
 	return time.Now().Before(i.ExpiresAt)
 }

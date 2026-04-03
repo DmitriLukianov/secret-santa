@@ -46,14 +46,14 @@ func UserToResponse(u *entity.User) UserResponse {
 	}
 }
 
-func UsersToResponse(users []*entity.User) []UserResponse {
+func UsersToResponse(users []entity.User) []UserResponse {
 	if users == nil {
 		return nil
 	}
 
 	resp := make([]UserResponse, len(users))
 	for i, u := range users {
-		resp[i] = UserToResponse(u)
+		resp[i] = UserToResponse(&u)
 	}
 	return resp
 }

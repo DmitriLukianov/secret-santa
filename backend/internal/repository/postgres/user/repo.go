@@ -17,16 +17,23 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, user entity.User) error {
+// Create создаёт пользователя и возвращает полностью заполненную сущность из БД
+func (r *Repository) Create(ctx context.Context, user entity.User) (entity.User, error) {
 	query := Create().
 		Values(user.Name, user.Email, user.OAuthID, user.OAuthProvider)
 
 	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.User{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, sql, args...)
+	returnedUser, err := scanUser(row)
+	if err != nil {
+		return entity.User{}, err
+	}
+
+	return *returnedUser, nil
 }
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
@@ -81,6 +88,7 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, name, email *stri
 	if email != nil {
 		query = query.Set("email", *email)
 	}
+
 	sql, args, err := query.ToSql()
 	if err != nil {
 		return err
