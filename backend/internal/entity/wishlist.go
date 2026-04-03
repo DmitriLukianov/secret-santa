@@ -25,25 +25,23 @@ type WishlistItem struct {
 	Wishlist   *Wishlist `db:"-"`
 }
 
+// NewWishlist — чистый конструктор, ID и таймстемпы даёт БД
 func NewWishlist(participantID uuid.UUID, visibility string) Wishlist {
-	now := time.Now()
 	return Wishlist{
-		ID:            uuid.New(),
 		ParticipantID: participantID,
 		Visibility:    visibility,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		// ID, CreatedAt, UpdatedAt будут заполнены БД
 	}
 }
 
+// NewWishlistItem — чистый конструктор
 func NewWishlistItem(wishlistID uuid.UUID, title string, link, imageURL, comment *string) WishlistItem {
 	return WishlistItem{
-		ID:         uuid.New(),
 		WishlistID: wishlistID,
 		Title:      title,
 		Link:       link,
 		ImageURL:   imageURL,
 		Comment:    comment,
-		CreatedAt:  time.Now(),
+		// ID и CreatedAt будут заполнены БД
 	}
 }

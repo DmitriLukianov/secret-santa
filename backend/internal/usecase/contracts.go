@@ -72,7 +72,8 @@ type InvitationUseCase interface {
 }
 
 type ChatRepository interface {
-	CreateMessage(ctx context.Context, msg entity.Message) error
+	// CreateMessage теперь возвращает полностью заполненную сущность из БД
+	CreateMessage(ctx context.Context, msg entity.Message) (entity.Message, error)
 	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
 }
 
@@ -82,6 +83,11 @@ type ChatUseCase interface {
 	SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error)
 }
 
+// AssignmentRepository — полный интерфейс (используется в chat и wishlist)
 type AssignmentRepository interface {
+	Create(ctx context.Context, assignment entity.Assignment) (entity.Assignment, error)
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
+	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
+
+	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
 }

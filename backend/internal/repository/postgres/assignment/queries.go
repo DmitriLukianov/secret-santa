@@ -4,9 +4,11 @@ import "github.com/Masterminds/squirrel"
 
 var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
+// createAssignmentQuery — теперь DB-first (убрали id и created_at)
 func createAssignmentQuery() squirrel.InsertBuilder {
 	return qb.Insert("assignments").
-		Columns("id", "event_id", "giver_id", "receiver_id", "created_at")
+		Columns("event_id", "giver_id", "receiver_id")
+	// id и created_at генерирует PostgreSQL (DEFAULT gen_random_uuid() и NOW())
 }
 
 func getAssignmentsByEventQuery(eventID string) squirrel.SelectBuilder {

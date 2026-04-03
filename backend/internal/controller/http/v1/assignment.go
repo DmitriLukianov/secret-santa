@@ -68,17 +68,5 @@ func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
-	var resp []response.AssignmentResponse
-	for _, a := range assignments {
-		resp = append(resp, response.AssignmentResponse{
-			ID:         a.ID.String(),
-			EventID:    a.EventID.String(),
-			GiverID:    a.GiverID.String(),
-			ReceiverID: a.ReceiverID.String(),
-			CreatedAt:  a.CreatedAt,
-		})
-	}
-
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.AssignmentsToResponse(assignments))
 }

@@ -86,10 +86,8 @@ internal/
     constants.go
     errors.go
   dto/
-    assignment.go
     event.go
     invitation.go
-    participant.go
     user.go
     wishlist.go
   entity/
@@ -103,7 +101,6 @@ internal/
   helpers/
     context.go
     db.go
-    ptr.go
     validator.go
   logger/
     logger.go
@@ -148,6 +145,7 @@ internal/
     auth/
       usecase.go
     chat/
+      interfaces.go
       usecase.go
     event/
       interfaces.go
@@ -850,14 +848,14 @@ func WishlistItemToResponse(item *entity.WishlistItem) WishlistItemResponse {
 	}
 }
 
-func WishlistItemsToResponse(items []*entity.WishlistItem) []WishlistItemResponse {
+func WishlistItemsToResponse(items []entity.WishlistItem) []WishlistItemResponse {
 	if items == nil {
 		return nil
 	}
 
 	resp := make([]WishlistItemResponse, len(items))
-	for i, item := range items {
-		resp[i] = WishlistItemToResponse(item)
+	for i := range items {
+		resp[i] = WishlistItemToResponse(&items[i])
 	}
 	return resp
 }
@@ -875,14 +873,14 @@ func AssignmentToResponse(a *entity.Assignment) AssignmentResponse {
 	}
 }
 
-func AssignmentsToResponse(assignments []*entity.Assignment) []AssignmentResponse {
+func AssignmentsToResponse(assignments []entity.Assignment) []AssignmentResponse {
 	if assignments == nil {
 		return nil
 	}
 
 	resp := make([]AssignmentResponse, len(assignments))
-	for i, a := range assignments {
-		resp[i] = AssignmentToResponse(a)
+	for i := range assignments {
+		resp[i] = AssignmentToResponse(&assignments[i])
 	}
 	return resp
 }
@@ -1008,19 +1006,7 @@ func (h *AssignmentHandler) GetByEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
-	var resp []response.AssignmentResponse
-	for _, a := range assignments {
-		resp = append(resp, response.AssignmentResponse{
-			ID:         a.ID.String(),
-			EventID:    a.EventID.String(),
-			GiverID:    a.GiverID.String(),
-			ReceiverID: a.ReceiverID.String(),
-			CreatedAt:  a.CreatedAt,
-		})
-	}
-
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.AssignmentsToResponse(assignments))
 }
 </file>
 
@@ -2021,6 +2007,7 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверка прав (владелец wishlist)
 	wishlist, err := h.uc.GetByID(r.Context(), wishlistID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
@@ -2068,13 +2055,8 @@ func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var resp []response.WishlistItemResponse
-	for _, item := range items {
-		resp = append(resp, response.WishlistItemToResponse(&item))
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.WishlistItemsToResponse(items))
 }
 
 func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
@@ -2101,6 +2083,7 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверка прав владельца
 	item, err := h.uc.GetItemByID(r.Context(), itemID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
@@ -2143,6 +2126,7 @@ func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверка прав владельца
 	item, err := h.uc.GetItemByID(r.Context(), itemID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
@@ -2263,14 +2247,6 @@ var (
 )
 </file>
 
-<file path="internal/dto/assignment.go">
-package dto
-
-type GenerateAssignmentInput struct {
-	EventID string
-}
-</file>
-
 <file path="internal/dto/event.go">
 package dto
 
@@ -2341,15 +2317,6 @@ type InvitationResponse struct {
 }
 </file>
 
-<file path="internal/dto/participant.go">
-package dto
-
-type AddParticipantInput struct {
-	EventID string
-	UserID  string
-}
-</file>
-
 <file path="internal/dto/user.go">
 package dto
 
@@ -2406,13 +2373,13 @@ type Assignment struct {
 	CreatedAt  time.Time `db:"created_at"`
 }
 
+// NewAssignment — чистый конструктор (DB-first).
+// ID и CreatedAt теперь генерирует PostgreSQL через RETURNING.
 func NewAssignment(eventID, giverID, receiverID uuid.UUID) Assignment {
 	return Assignment{
-		ID:         uuid.New(),
 		EventID:    eventID,
 		GiverID:    giverID,
 		ReceiverID: receiverID,
-		CreatedAt:  time.Now(),
 	}
 }
 </file>
@@ -2534,20 +2501,19 @@ type Invitation struct {
 	UpdatedAt time.Time `db:"updated_at"`
 }
 
+// NewInvitation — чистый DB-first конструктор.
+// ID, CreatedAt, UpdatedAt теперь генерирует PostgreSQL.
 func NewInvitation(eventID, createdBy uuid.UUID, expiresIn time.Duration) Invitation {
-	now := time.Now()
 	if expiresIn == 0 {
 		expiresIn = 7 * 24 * time.Hour
 	}
 
 	return Invitation{
-		ID:        uuid.New(),
 		EventID:   eventID,
-		Token:     uuid.New().String(),
-		ExpiresAt: now.Add(expiresIn),
+		Token:     uuid.New().String(), // токен генерируем здесь (бизнес-логика)
+		ExpiresAt: time.Now().Add(expiresIn),
 		CreatedBy: createdBy,
-		CreatedAt: now,
-		UpdatedAt: now,
+		// ID, CreatedAt, UpdatedAt — будут заполнены БД
 	}
 }
 
@@ -2574,14 +2540,15 @@ type Message struct {
 	CreatedAt  time.Time `db:"created_at"`
 }
 
+// NewMessage — чистый DB-first конструктор.
+// ID и CreatedAt теперь генерирует PostgreSQL через RETURNING.
 func NewMessage(eventID, senderID, receiverID uuid.UUID, content string) Message {
 	return Message{
-		ID:         uuid.New(),
 		EventID:    eventID,
 		SenderID:   senderID,
 		ReceiverID: receiverID,
 		Content:    content,
-		CreatedAt:  time.Now(),
+		// ID и CreatedAt будут заполнены БД
 	}
 }
 </file>
@@ -2673,26 +2640,24 @@ type WishlistItem struct {
 	Wishlist   *Wishlist `db:"-"`
 }
 
+// NewWishlist — чистый конструктор, ID и таймстемпы даёт БД
 func NewWishlist(participantID uuid.UUID, visibility string) Wishlist {
-	now := time.Now()
 	return Wishlist{
-		ID:            uuid.New(),
 		ParticipantID: participantID,
 		Visibility:    visibility,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		// ID, CreatedAt, UpdatedAt будут заполнены БД
 	}
 }
 
+// NewWishlistItem — чистый конструктор
 func NewWishlistItem(wishlistID uuid.UUID, title string, link, imageURL, comment *string) WishlistItem {
 	return WishlistItem{
-		ID:         uuid.New(),
 		WishlistID: wishlistID,
 		Title:      title,
 		Link:       link,
 		ImageURL:   imageURL,
 		Comment:    comment,
-		CreatedAt:  time.Now(),
+		// ID и CreatedAt будут заполнены БД
 	}
 }
 </file>
@@ -2737,22 +2702,6 @@ func IsDuplicateError(err error) bool {
 	errStr := err.Error()
 	return strings.Contains(errStr, "duplicate key value violates unique constraint") ||
 		strings.Contains(errStr, "SQLSTATE 23505")
-}
-</file>
-
-<file path="internal/helpers/ptr.go">
-package helpers
-
-func ToPtr[T any](v T) *T {
-	return &v
-}
-
-func FromPtr[T any](v *T) T {
-	if v == nil {
-		var zero T
-		return zero
-	}
-	return *v
 }
 </file>
 
@@ -3070,9 +3019,11 @@ import "github.com/Masterminds/squirrel"
 
 var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
+// createAssignmentQuery — теперь DB-first (убрали id и created_at)
 func createAssignmentQuery() squirrel.InsertBuilder {
 	return qb.Insert("assignments").
-		Columns("id", "event_id", "giver_id", "receiver_id", "created_at")
+		Columns("event_id", "giver_id", "receiver_id")
+	// id и created_at генерирует PostgreSQL (DEFAULT gen_random_uuid() и NOW())
 }
 
 func getAssignmentsByEventQuery(eventID string) squirrel.SelectBuilder {
@@ -3110,16 +3061,24 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, a entity.Assignment) error {
+// Create — теперь DB-first: возвращает полностью заполненную сущность из БД
+func (r *Repository) Create(ctx context.Context, a entity.Assignment) (entity.Assignment, error) {
 	query := createAssignmentQuery().
-		Values(a.ID, a.EventID, a.GiverID, a.ReceiverID, a.CreatedAt)
+		Values(a.EventID, a.GiverID, a.ReceiverID).
+		Suffix("RETURNING id, event_id, giver_id, receiver_id, created_at")
 
 	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.Assignment{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, sql, args...)
+	returned, err := scanAssignment(row)
+	if err != nil {
+		return entity.Assignment{}, err
+	}
+
+	return *returned, nil
 }
 
 func (r *Repository) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error) {
@@ -3187,7 +3146,7 @@ func (r *Repository) deleteByEventTx(ctx context.Context, tx pgx.Tx, eventID uui
 
 func (r *Repository) createTx(ctx context.Context, tx pgx.Tx, a entity.Assignment) error {
 	query := createAssignmentQuery().
-		Values(a.ID, a.EventID, a.GiverID, a.ReceiverID, a.CreatedAt)
+		Values(a.EventID, a.GiverID, a.ReceiverID)
 
 	sql, args, err := query.ToSql()
 	if err != nil {
@@ -3198,7 +3157,6 @@ func (r *Repository) createTx(ctx context.Context, tx pgx.Tx, a entity.Assignmen
 }
 
 func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, status definitions.EventStatus) error {
-
 	_, err := tx.Exec(ctx, `
 		UPDATE events 
 		SET status = $1, updated_at = now() 
@@ -3261,9 +3219,10 @@ import "github.com/Masterminds/squirrel"
 
 var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
+// createMessageQuery — DB-first (убрали id и created_at)
 func createMessageQuery() squirrel.InsertBuilder {
 	return qb.Insert("messages").
-		Columns("id", "event_id", "sender_id", "receiver_id", "content", "created_at")
+		Columns("event_id", "sender_id", "receiver_id", "content")
 }
 
 func getMessagesByPairQuery(eventID, user1ID, user2ID string) squirrel.SelectBuilder {
@@ -3306,16 +3265,24 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) CreateMessage(ctx context.Context, msg entity.Message) error {
+// CreateMessage — теперь DB-first: возвращает полностью заполненную сущность из БД
+func (r *Repository) CreateMessage(ctx context.Context, msg entity.Message) (entity.Message, error) {
 	query := createMessageQuery().
-		Values(msg.ID, msg.EventID, msg.SenderID, msg.ReceiverID, msg.Content, msg.CreatedAt)
+		Values(msg.EventID, msg.SenderID, msg.ReceiverID, msg.Content).
+		Suffix("RETURNING id, event_id, sender_id, receiver_id, content, created_at")
 
 	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.Message{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, sql, args...)
+	returned, err := scanMessage(row)
+	if err != nil {
+		return entity.Message{}, err
+	}
+
+	return *returned, nil
 }
 
 func (r *Repository) GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error) {
@@ -3628,9 +3595,10 @@ import "github.com/Masterminds/squirrel"
 
 var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
+// createInvitationQuery — DB-first (убрали id, created_at, updated_at)
 func createInvitationQuery() squirrel.InsertBuilder {
 	return qb.Insert("invitations").
-		Columns("id", "event_id", "token", "expires_at", "created_by", "created_at", "updated_at")
+		Columns("event_id", "token", "expires_at", "created_by")
 }
 
 func getInvitationByTokenQuery() squirrel.SelectBuilder {
@@ -3661,24 +3629,24 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, i entity.Invitation) error {
-	query, args, err := createInvitationQuery().
-		Values(
-			i.ID,
-			i.EventID,
-			i.Token,
-			i.ExpiresAt,
-			i.CreatedBy,
-			i.CreatedAt,
-			i.UpdatedAt,
-		).
-		ToSql()
+// Create — теперь возвращает полностью заполненную сущность из БД
+func (r *Repository) Create(ctx context.Context, i entity.Invitation) (entity.Invitation, error) {
+	query := createInvitationQuery().
+		Values(i.EventID, i.Token, i.ExpiresAt, i.CreatedBy).
+		Suffix("RETURNING id, event_id, token, expires_at, created_by, created_at, updated_at")
+
+	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.Invitation{}, err
 	}
 
-	_, err = r.db.Exec(ctx, query, args...)
-	return err
+	row := r.db.QueryRow(ctx, sql, args...)
+	returned, err := ScanInvitation(row)
+	if err != nil {
+		return entity.Invitation{}, err
+	}
+
+	return *returned, nil
 }
 
 func (r *Repository) GetByToken(ctx context.Context, token string) (*entity.Invitation, error) {
@@ -4185,12 +4153,14 @@ var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 func createWishlistQuery() squirrel.InsertBuilder {
 	return qb.Insert("wishlists").
-		Columns("id", "participant_id", "visibility", "created_at", "updated_at")
+		Columns("participant_id", "visibility")
+	// id, created_at, updated_at — БД сама
 }
 
 func createWishlistItemQuery() squirrel.InsertBuilder {
 	return qb.Insert("wishlist_items").
-		Columns("id", "wishlist_id", "title", "link", "image_url", "comment", "created_at")
+		Columns("wishlist_id", "title", "link", "image_url", "comment")
+	// id, created_at — БД сама
 }
 
 func getWishlistByParticipantQuery(participantID string) squirrel.SelectBuilder {
@@ -4204,6 +4174,7 @@ func getWishlistItemsQuery(wishlistID string) squirrel.SelectBuilder {
 		From("wishlist_items").
 		Where(squirrel.Eq{"wishlist_id": wishlistID})
 }
+
 func updateWishlistItemQuery(itemID string) squirrel.UpdateBuilder {
 	return qb.Update("wishlist_items").
 		Where(squirrel.Eq{"id": itemID})
@@ -4235,7 +4206,6 @@ package wishlist
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
@@ -4252,34 +4222,48 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
-
+func (r *Repository) Create(ctx context.Context, w entity.Wishlist) (entity.Wishlist, error) {
+	// Проверка на существование (можно оставить, но лучше делать через unique constraint)
 	existing, err := r.GetByParticipant(ctx, w.ParticipantID)
 	if err == nil && existing != nil {
-		return fmt.Errorf("wishlist already exists for participant %s: %w", w.ParticipantID, definitions.ErrConflict)
+		return entity.Wishlist{}, fmt.Errorf("wishlist already exists for participant %s: %w", w.ParticipantID, definitions.ErrConflict)
 	}
 
-	query := createWishlistQuery().
-		Values(w.ID, w.ParticipantID, w.Visibility, w.CreatedAt, w.UpdatedAt)
+	query, args, err := createWishlistQuery().
+		Values(w.ParticipantID, w.Visibility).
+		Suffix("RETURNING id, participant_id, visibility, created_at, updated_at").
+		ToSql()
 
-	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.Wishlist{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, query, args...)
+	returned, err := scanWishlist(row)
+	if err != nil {
+		return entity.Wishlist{}, err
+	}
+
+	return *returned, nil
 }
 
-func (r *Repository) CreateItem(ctx context.Context, item entity.WishlistItem) error {
-	query := createWishlistItemQuery().
-		Values(item.ID, item.WishlistID, item.Title, item.Link, item.ImageURL, item.Comment, item.CreatedAt)
+func (r *Repository) CreateItem(ctx context.Context, item entity.WishlistItem) (entity.WishlistItem, error) {
+	query, args, err := createWishlistItemQuery().
+		Values(item.WishlistID, item.Title, item.Link, item.ImageURL, item.Comment).
+		Suffix("RETURNING id, wishlist_id, title, link, image_url, comment, created_at").
+		ToSql()
 
-	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.WishlistItem{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, query, args...)
+	returned, err := scanWishlistItem(row)
+	if err != nil {
+		return entity.WishlistItem{}, err
+	}
+
+	return *returned, nil
 }
 
 func (r *Repository) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
@@ -4306,13 +4290,14 @@ func (r *Repository) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]enti
 
 	return scanWishlistItems(rows)
 }
+
 func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) error {
 	query := updateWishlistItemQuery(itemID.String()).
 		Set("title", title).
 		Set("link", link).
 		Set("image_url", imageURL).
 		Set("comment", comment).
-		Set("created_at", time.Now())
+		Set("updated_at", "NOW()") // добавили обновление updated_at
 
 	sql, args, err := query.ToSql()
 	if err != nil {
@@ -4376,7 +4361,9 @@ import (
 )
 
 type Repository interface {
-	Create(ctx context.Context, assignment entity.Assignment) error
+	// Create теперь возвращает полностью заполненную сущность из БД (как в wishlist/participant/event)
+	Create(ctx context.Context, assignment entity.Assignment) (entity.Assignment, error)
+
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
 	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
 
@@ -4517,6 +4504,7 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		if valid {
 			assignments := make([]entity.Assignment, n)
 			for i := 0; i < n; i++ {
+				// Теперь NewAssignment — чистый DB-first конструктор
 				assignments[i] = entity.NewAssignment(eventID, ids[i], shuffled[i])
 			}
 			return assignments, nil
@@ -4536,6 +4524,7 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([
 		return nil, fmt.Errorf("failed to get assignments: %w", err)
 	}
 
+	// Возвращаем только назначение текущего пользователя (как Санта)
 	for _, a := range assignments {
 		if a.GiverID == userID {
 			return []entity.Assignment{a}, nil
@@ -4621,6 +4610,36 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 }
 </file>
 
+<file path="internal/usecase/chat/interfaces.go">
+package chat
+
+import (
+	"context"
+
+	"secret-santa-backend/internal/entity"
+
+	"github.com/google/uuid"
+)
+
+// Repository — локальный интерфейс репозитория для чата
+// (полностью соответствует ChatRepository из contracts.go)
+type Repository interface {
+	// CreateMessage теперь возвращает полностью заполненную сущность из БД
+	CreateMessage(ctx context.Context, msg entity.Message) (entity.Message, error)
+	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
+}
+
+// ParticipantRepository и AssignmentRepository — зависимости usecase
+type ParticipantRepository interface {
+	// Пока не используется в chat, но оставляем для единообразия
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
+}
+
+type AssignmentRepository interface {
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
+}
+</file>
+
 <file path="internal/usecase/chat/usecase.go">
 package chat
 
@@ -4631,7 +4650,7 @@ import (
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
-	"secret-santa-backend/internal/usecase" // ← ОБЯЗАТЕЛЬНЫЙ ИМПОРТ
+	"secret-santa-backend/internal/usecase"
 
 	"github.com/google/uuid"
 )
@@ -4655,6 +4674,56 @@ func NewWithLogger(repo usecase.ChatRepository, participantRepo usecase.Particip
 	uc := New(repo, participantRepo, assignmentRepo)
 	uc.log = log
 	return uc
+}
+
+// SendMessage — отправить сообщение (автоматически определяет пару)
+func (uc *UseCase) SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error) {
+	if content == "" {
+		return entity.Message{}, definitions.ErrInvalidUserInput
+	}
+
+	if uc.log != nil {
+		uc.log.Info("send message started",
+			slog.String("event_id", eventID.String()),
+			slog.String("user_id", userID.String()),
+		)
+	}
+
+	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("failed to get assignments: %w", err)
+	}
+
+	var receiverID uuid.UUID
+	for _, a := range assignments {
+		if a.GiverID == userID {
+			receiverID = a.ReceiverID
+			break
+		}
+		if a.ReceiverID == userID {
+			receiverID = a.GiverID
+			break
+		}
+	}
+	if receiverID == uuid.Nil {
+		return entity.Message{}, definitions.ErrNotSanta
+	}
+
+	msg := entity.NewMessage(eventID, userID, receiverID, content)
+
+	// Теперь CreateMessage возвращает полную сущность из БД
+	createdMsg, err := uc.repo.CreateMessage(ctx, msg)
+	if err != nil {
+		return entity.Message{}, fmt.Errorf("failed to create message: %w", err)
+	}
+
+	if uc.log != nil {
+		uc.log.Info("message sent successfully",
+			slog.String("message_id", createdMsg.ID.String()),
+		)
+	}
+
+	return createdMsg, nil
 }
 
 // GetRecipientChat — чат «Кому я Санта» (я — giver)
@@ -4711,54 +4780,6 @@ func (uc *UseCase) GetSenderChat(ctx context.Context, eventID, userID uuid.UUID)
 	}
 
 	return uc.repo.GetMessagesByPair(ctx, eventID, senderID, userID)
-}
-
-// SendMessage — отправить сообщение (автоматически определяет пару)
-func (uc *UseCase) SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error) {
-	if content == "" {
-		return entity.Message{}, definitions.ErrInvalidUserInput
-	}
-
-	if uc.log != nil {
-		uc.log.Info("send message started",
-			slog.String("event_id", eventID.String()),
-			slog.String("user_id", userID.String()),
-		)
-	}
-
-	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
-	if err != nil {
-		return entity.Message{}, fmt.Errorf("failed to get assignments: %w", err)
-	}
-
-	var receiverID uuid.UUID
-	for _, a := range assignments {
-		if a.GiverID == userID {
-			receiverID = a.ReceiverID
-			break
-		}
-		if a.ReceiverID == userID {
-			receiverID = a.GiverID
-			break
-		}
-	}
-	if receiverID == uuid.Nil {
-		return entity.Message{}, definitions.ErrNotSanta
-	}
-
-	msg := entity.NewMessage(eventID, userID, receiverID, content)
-
-	if err := uc.repo.CreateMessage(ctx, msg); err != nil {
-		return entity.Message{}, fmt.Errorf("failed to create message: %w", err)
-	}
-
-	if uc.log != nil {
-		uc.log.Info("message sent successfully",
-			slog.String("message_id", msg.ID.String()),
-		)
-	}
-
-	return msg, nil
 }
 </file>
 
@@ -5070,7 +5091,8 @@ import (
 )
 
 type Repository interface {
-	Create(ctx context.Context, invitation entity.Invitation) error
+	// Create теперь возвращает полностью заполненную сущность из БД
+	Create(ctx context.Context, invitation entity.Invitation) (entity.Invitation, error)
 	GetByToken(ctx context.Context, token string) (*entity.Invitation, error)
 }
 
@@ -5137,20 +5159,22 @@ func (uc *UseCase) GenerateInvite(ctx context.Context, input dto.CreateInvitatio
 
 	inv := entity.NewInvitation(input.EventID, organizerID, input.ExpiresIn)
 
-	if err := uc.repo.Create(ctx, inv); err != nil {
+	// Теперь Create возвращает полную сущность из БД
+	createdInv, err := uc.repo.Create(ctx, inv)
+	if err != nil {
 		return dto.InvitationResponse{}, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
-	inviteURL := fmt.Sprintf("https://yourdomain.com/invite/%s", inv.Token)
+	inviteURL := fmt.Sprintf("https://yourdomain.com/invite/%s", createdInv.Token)
 
 	if uc.log != nil {
-		uc.log.Info("invitation generated", slog.String("token", inv.Token))
+		uc.log.Info("invitation generated", slog.String("token", createdInv.Token))
 	}
 
 	return dto.InvitationResponse{
 		InviteURL: inviteURL,
-		Token:     inv.Token,
-		ExpiresAt: inv.ExpiresAt,
+		Token:     createdInv.Token,
+		ExpiresAt: createdInv.ExpiresAt,
 	}, nil
 }
 
@@ -5176,6 +5200,7 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 	if !event.CanAddParticipants() {
 		return definitions.ErrInvalidEventState
 	}
+
 	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		return err
@@ -5507,8 +5532,10 @@ import (
 )
 
 type Repository interface {
-	Create(ctx context.Context, wishlist entity.Wishlist) error
-	CreateItem(ctx context.Context, item entity.WishlistItem) error
+	// Create и CreateItem теперь возвращают полностью заполненные сущности из БД
+	Create(ctx context.Context, wishlist entity.Wishlist) (entity.Wishlist, error)
+	CreateItem(ctx context.Context, item entity.WishlistItem) (entity.WishlistItem, error)
+
 	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
 	GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
@@ -5570,9 +5597,14 @@ func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibili
 		)
 	}
 
+	if participantID == uuid.Nil {
+		return entity.Wishlist{}, definitions.ErrInvalidUserInput
+	}
+
 	wishlist := entity.NewWishlist(participantID, visibility)
 
-	if err := uc.repo.Create(ctx, wishlist); err != nil {
+	createdWishlist, err := uc.repo.Create(ctx, wishlist)
+	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create wishlist",
 				slog.String("participant_id", participantID.String()),
@@ -5584,12 +5616,12 @@ func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibili
 
 	if uc.log != nil {
 		uc.log.Info("wishlist created successfully",
-			slog.String("wishlist_id", wishlist.ID.String()),
+			slog.String("wishlist_id", createdWishlist.ID.String()),
 			slog.String("participant_id", participantID.String()),
 		)
 	}
 
-	return wishlist, nil
+	return createdWishlist, nil
 }
 
 func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
@@ -5597,19 +5629,20 @@ func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title stri
 		uc.log.Info("add wishlist item started",
 			slog.String("wishlist_id", wishlistID.String()),
 			slog.String("title", title),
-			slog.Any("link", link),
-			slog.Any("image_url", imageURL),
-			slog.Any("comment", comment),
 		)
+	}
+
+	if wishlistID == uuid.Nil {
+		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
 	}
 
 	item := entity.NewWishlistItem(wishlistID, title, link, imageURL, comment)
 
-	if err := uc.repo.CreateItem(ctx, item); err != nil {
+	createdItem, err := uc.repo.CreateItem(ctx, item)
+	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to add wishlist item",
 				slog.String("wishlist_id", wishlistID.String()),
-				slog.String("title", title),
 				slog.String("error", err.Error()),
 			)
 		}
@@ -5619,11 +5652,11 @@ func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title stri
 	if uc.log != nil {
 		uc.log.Info("wishlist item added successfully",
 			slog.String("wishlist_id", wishlistID.String()),
-			slog.String("item_id", item.ID.String()),
+			slog.String("item_id", createdItem.ID.String()),
 		)
 	}
 
-	return item, nil
+	return createdItem, nil
 }
 
 func (uc *UseCase) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
@@ -5684,13 +5717,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		return nil, fmt.Errorf("failed to get participant: %w", err)
 	}
 
-	if uc.log != nil {
-		uc.log.Info("participant found",
-			slog.String("participant_id", participant.ID.String()),
-			slog.String("user_id", participant.UserID.String()),
-		)
-	}
-
 	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
 	if err != nil {
 		if uc.log != nil {
@@ -5738,7 +5764,9 @@ func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title strin
 		)
 	}
 
-	item := entity.WishlistItem{ID: itemID, Title: title, Link: link, ImageURL: imageURL, Comment: comment}
+	if itemID == uuid.Nil {
+		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
+	}
 
 	if err := uc.repo.UpdateItem(ctx, itemID, title, link, imageURL, comment); err != nil {
 		if uc.log != nil {
@@ -5747,15 +5775,26 @@ func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title strin
 		return entity.WishlistItem{}, fmt.Errorf("failed to update item: %w", err)
 	}
 
+	// Получаем актуальный item после обновления
+	itemPtr, err := uc.repo.GetItemByID(ctx, itemID)
+	if err != nil {
+		return entity.WishlistItem{}, fmt.Errorf("failed to get updated item: %w", err)
+	}
+
 	if uc.log != nil {
 		uc.log.Info("wishlist item updated successfully", slog.String("item_id", itemID.String()))
 	}
-	return item, nil
+
+	return *itemPtr, nil // ← исправление здесь
 }
 
 func (uc *UseCase) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 	if uc.log != nil {
 		uc.log.Info("delete wishlist item started", slog.String("item_id", itemID.String()))
+	}
+
+	if itemID == uuid.Nil {
+		return definitions.ErrInvalidUserInput
 	}
 
 	if err := uc.repo.DeleteItem(ctx, itemID); err != nil {
@@ -5780,18 +5819,7 @@ func (uc *UseCase) GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.W
 		uc.log.Info("get wishlist item by id started", slog.String("item_id", itemID.String()))
 	}
 
-	items, err := uc.GetItems(ctx, uuid.Nil)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range items {
-		if items[i].ID == itemID {
-			return &items[i], nil
-		}
-	}
-
-	return nil, definitions.ErrWishlistNotFound
+	return uc.repo.GetItemByID(ctx, itemID)
 }
 
 func (uc *UseCase) GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error) {
@@ -5882,7 +5910,8 @@ type InvitationUseCase interface {
 }
 
 type ChatRepository interface {
-	CreateMessage(ctx context.Context, msg entity.Message) error
+	// CreateMessage теперь возвращает полностью заполненную сущность из БД
+	CreateMessage(ctx context.Context, msg entity.Message) (entity.Message, error)
 	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
 }
 
@@ -5892,8 +5921,13 @@ type ChatUseCase interface {
 	SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error)
 }
 
+// AssignmentRepository — полный интерфейс (используется в chat и wishlist)
 type AssignmentRepository interface {
+	Create(ctx context.Context, assignment entity.Assignment) (entity.Assignment, error)
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
+	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
+
+	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
 }
 </file>
 

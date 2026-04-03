@@ -41,9 +41,14 @@ func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibili
 		)
 	}
 
+	if participantID == uuid.Nil {
+		return entity.Wishlist{}, definitions.ErrInvalidUserInput
+	}
+
 	wishlist := entity.NewWishlist(participantID, visibility)
 
-	if err := uc.repo.Create(ctx, wishlist); err != nil {
+	createdWishlist, err := uc.repo.Create(ctx, wishlist)
+	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create wishlist",
 				slog.String("participant_id", participantID.String()),
@@ -55,12 +60,12 @@ func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibili
 
 	if uc.log != nil {
 		uc.log.Info("wishlist created successfully",
-			slog.String("wishlist_id", wishlist.ID.String()),
+			slog.String("wishlist_id", createdWishlist.ID.String()),
 			slog.String("participant_id", participantID.String()),
 		)
 	}
 
-	return wishlist, nil
+	return createdWishlist, nil
 }
 
 func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
@@ -68,19 +73,20 @@ func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title stri
 		uc.log.Info("add wishlist item started",
 			slog.String("wishlist_id", wishlistID.String()),
 			slog.String("title", title),
-			slog.Any("link", link),
-			slog.Any("image_url", imageURL),
-			slog.Any("comment", comment),
 		)
+	}
+
+	if wishlistID == uuid.Nil {
+		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
 	}
 
 	item := entity.NewWishlistItem(wishlistID, title, link, imageURL, comment)
 
-	if err := uc.repo.CreateItem(ctx, item); err != nil {
+	createdItem, err := uc.repo.CreateItem(ctx, item)
+	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to add wishlist item",
 				slog.String("wishlist_id", wishlistID.String()),
-				slog.String("title", title),
 				slog.String("error", err.Error()),
 			)
 		}
@@ -90,11 +96,11 @@ func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title stri
 	if uc.log != nil {
 		uc.log.Info("wishlist item added successfully",
 			slog.String("wishlist_id", wishlistID.String()),
-			slog.String("item_id", item.ID.String()),
+			slog.String("item_id", createdItem.ID.String()),
 		)
 	}
 
-	return item, nil
+	return createdItem, nil
 }
 
 func (uc *UseCase) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
@@ -155,13 +161,6 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		return nil, fmt.Errorf("failed to get participant: %w", err)
 	}
 
-	if uc.log != nil {
-		uc.log.Info("participant found",
-			slog.String("participant_id", participant.ID.String()),
-			slog.String("user_id", participant.UserID.String()),
-		)
-	}
-
 	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
 	if err != nil {
 		if uc.log != nil {
@@ -209,7 +208,9 @@ func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title strin
 		)
 	}
 
-	item := entity.WishlistItem{ID: itemID, Title: title, Link: link, ImageURL: imageURL, Comment: comment}
+	if itemID == uuid.Nil {
+		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
+	}
 
 	if err := uc.repo.UpdateItem(ctx, itemID, title, link, imageURL, comment); err != nil {
 		if uc.log != nil {
@@ -218,15 +219,26 @@ func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title strin
 		return entity.WishlistItem{}, fmt.Errorf("failed to update item: %w", err)
 	}
 
+	// Получаем актуальный item после обновления
+	itemPtr, err := uc.repo.GetItemByID(ctx, itemID)
+	if err != nil {
+		return entity.WishlistItem{}, fmt.Errorf("failed to get updated item: %w", err)
+	}
+
 	if uc.log != nil {
 		uc.log.Info("wishlist item updated successfully", slog.String("item_id", itemID.String()))
 	}
-	return item, nil
+
+	return *itemPtr, nil // ← исправление здесь
 }
 
 func (uc *UseCase) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
 	if uc.log != nil {
 		uc.log.Info("delete wishlist item started", slog.String("item_id", itemID.String()))
+	}
+
+	if itemID == uuid.Nil {
+		return definitions.ErrInvalidUserInput
 	}
 
 	if err := uc.repo.DeleteItem(ctx, itemID); err != nil {
@@ -251,18 +263,7 @@ func (uc *UseCase) GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.W
 		uc.log.Info("get wishlist item by id started", slog.String("item_id", itemID.String()))
 	}
 
-	items, err := uc.GetItems(ctx, uuid.Nil)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range items {
-		if items[i].ID == itemID {
-			return &items[i], nil
-		}
-	}
-
-	return nil, definitions.ErrWishlistNotFound
+	return uc.repo.GetItemByID(ctx, itemID)
 }
 
 func (uc *UseCase) GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error) {

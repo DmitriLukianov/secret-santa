@@ -3,7 +3,6 @@ package wishlist
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
@@ -20,34 +19,48 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, w entity.Wishlist) error {
-
+func (r *Repository) Create(ctx context.Context, w entity.Wishlist) (entity.Wishlist, error) {
+	// Проверка на существование (можно оставить, но лучше делать через unique constraint)
 	existing, err := r.GetByParticipant(ctx, w.ParticipantID)
 	if err == nil && existing != nil {
-		return fmt.Errorf("wishlist already exists for participant %s: %w", w.ParticipantID, definitions.ErrConflict)
+		return entity.Wishlist{}, fmt.Errorf("wishlist already exists for participant %s: %w", w.ParticipantID, definitions.ErrConflict)
 	}
 
-	query := createWishlistQuery().
-		Values(w.ID, w.ParticipantID, w.Visibility, w.CreatedAt, w.UpdatedAt)
+	query, args, err := createWishlistQuery().
+		Values(w.ParticipantID, w.Visibility).
+		Suffix("RETURNING id, participant_id, visibility, created_at, updated_at").
+		ToSql()
 
-	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.Wishlist{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, query, args...)
+	returned, err := scanWishlist(row)
+	if err != nil {
+		return entity.Wishlist{}, err
+	}
+
+	return *returned, nil
 }
 
-func (r *Repository) CreateItem(ctx context.Context, item entity.WishlistItem) error {
-	query := createWishlistItemQuery().
-		Values(item.ID, item.WishlistID, item.Title, item.Link, item.ImageURL, item.Comment, item.CreatedAt)
+func (r *Repository) CreateItem(ctx context.Context, item entity.WishlistItem) (entity.WishlistItem, error) {
+	query, args, err := createWishlistItemQuery().
+		Values(item.WishlistID, item.Title, item.Link, item.ImageURL, item.Comment).
+		Suffix("RETURNING id, wishlist_id, title, link, image_url, comment, created_at").
+		ToSql()
 
-	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.WishlistItem{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, query, args...)
+	returned, err := scanWishlistItem(row)
+	if err != nil {
+		return entity.WishlistItem{}, err
+	}
+
+	return *returned, nil
 }
 
 func (r *Repository) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
@@ -74,13 +87,14 @@ func (r *Repository) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]enti
 
 	return scanWishlistItems(rows)
 }
+
 func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) error {
 	query := updateWishlistItemQuery(itemID.String()).
 		Set("title", title).
 		Set("link", link).
 		Set("image_url", imageURL).
 		Set("comment", comment).
-		Set("created_at", time.Now())
+		Set("updated_at", "NOW()") // добавили обновление updated_at
 
 	sql, args, err := query.ToSql()
 	if err != nil {

@@ -9,7 +9,8 @@ import (
 )
 
 type Repository interface {
-	Create(ctx context.Context, invitation entity.Invitation) error
+	// Create теперь возвращает полностью заполненную сущность из БД
+	Create(ctx context.Context, invitation entity.Invitation) (entity.Invitation, error)
 	GetByToken(ctx context.Context, token string) (*entity.Invitation, error)
 }
 

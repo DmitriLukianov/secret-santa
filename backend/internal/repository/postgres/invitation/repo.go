@@ -16,24 +16,24 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, i entity.Invitation) error {
-	query, args, err := createInvitationQuery().
-		Values(
-			i.ID,
-			i.EventID,
-			i.Token,
-			i.ExpiresAt,
-			i.CreatedBy,
-			i.CreatedAt,
-			i.UpdatedAt,
-		).
-		ToSql()
+// Create — теперь возвращает полностью заполненную сущность из БД
+func (r *Repository) Create(ctx context.Context, i entity.Invitation) (entity.Invitation, error) {
+	query := createInvitationQuery().
+		Values(i.EventID, i.Token, i.ExpiresAt, i.CreatedBy).
+		Suffix("RETURNING id, event_id, token, expires_at, created_by, created_at, updated_at")
+
+	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.Invitation{}, err
 	}
 
-	_, err = r.db.Exec(ctx, query, args...)
-	return err
+	row := r.db.QueryRow(ctx, sql, args...)
+	returned, err := ScanInvitation(row)
+	if err != nil {
+		return entity.Invitation{}, err
+	}
+
+	return *returned, nil
 }
 
 func (r *Repository) GetByToken(ctx context.Context, token string) (*entity.Invitation, error) {

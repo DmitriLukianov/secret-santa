@@ -20,16 +20,24 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) Create(ctx context.Context, a entity.Assignment) error {
+// Create — теперь DB-first: возвращает полностью заполненную сущность из БД
+func (r *Repository) Create(ctx context.Context, a entity.Assignment) (entity.Assignment, error) {
 	query := createAssignmentQuery().
-		Values(a.ID, a.EventID, a.GiverID, a.ReceiverID, a.CreatedAt)
+		Values(a.EventID, a.GiverID, a.ReceiverID).
+		Suffix("RETURNING id, event_id, giver_id, receiver_id, created_at")
 
 	sql, args, err := query.ToSql()
 	if err != nil {
-		return err
+		return entity.Assignment{}, err
 	}
-	_, err = r.db.Exec(ctx, sql, args...)
-	return err
+
+	row := r.db.QueryRow(ctx, sql, args...)
+	returned, err := scanAssignment(row)
+	if err != nil {
+		return entity.Assignment{}, err
+	}
+
+	return *returned, nil
 }
 
 func (r *Repository) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error) {
@@ -97,7 +105,7 @@ func (r *Repository) deleteByEventTx(ctx context.Context, tx pgx.Tx, eventID uui
 
 func (r *Repository) createTx(ctx context.Context, tx pgx.Tx, a entity.Assignment) error {
 	query := createAssignmentQuery().
-		Values(a.ID, a.EventID, a.GiverID, a.ReceiverID, a.CreatedAt)
+		Values(a.EventID, a.GiverID, a.ReceiverID)
 
 	sql, args, err := query.ToSql()
 	if err != nil {
@@ -108,7 +116,6 @@ func (r *Repository) createTx(ctx context.Context, tx pgx.Tx, a entity.Assignmen
 }
 
 func (r *Repository) updateEventStatusTx(ctx context.Context, tx pgx.Tx, eventID uuid.UUID, status definitions.EventStatus) error {
-
 	_, err := tx.Exec(ctx, `
 		UPDATE events 
 		SET status = $1, updated_at = now() 

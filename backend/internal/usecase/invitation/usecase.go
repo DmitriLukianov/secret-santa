@@ -55,20 +55,22 @@ func (uc *UseCase) GenerateInvite(ctx context.Context, input dto.CreateInvitatio
 
 	inv := entity.NewInvitation(input.EventID, organizerID, input.ExpiresIn)
 
-	if err := uc.repo.Create(ctx, inv); err != nil {
+	// Теперь Create возвращает полную сущность из БД
+	createdInv, err := uc.repo.Create(ctx, inv)
+	if err != nil {
 		return dto.InvitationResponse{}, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
-	inviteURL := fmt.Sprintf("https://yourdomain.com/invite/%s", inv.Token)
+	inviteURL := fmt.Sprintf("https://yourdomain.com/invite/%s", createdInv.Token)
 
 	if uc.log != nil {
-		uc.log.Info("invitation generated", slog.String("token", inv.Token))
+		uc.log.Info("invitation generated", slog.String("token", createdInv.Token))
 	}
 
 	return dto.InvitationResponse{
 		InviteURL: inviteURL,
-		Token:     inv.Token,
-		ExpiresAt: inv.ExpiresAt,
+		Token:     createdInv.Token,
+		ExpiresAt: createdInv.ExpiresAt,
 	}, nil
 }
 
@@ -94,6 +96,7 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 	if !event.CanAddParticipants() {
 		return definitions.ErrInvalidEventState
 	}
+
 	_, err = uc.participantUC.Create(ctx, inv.EventID, input.UserID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		return err

@@ -4,9 +4,10 @@ import "github.com/Masterminds/squirrel"
 
 var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
+// createMessageQuery — DB-first (убрали id и created_at)
 func createMessageQuery() squirrel.InsertBuilder {
 	return qb.Insert("messages").
-		Columns("id", "event_id", "sender_id", "receiver_id", "content", "created_at")
+		Columns("event_id", "sender_id", "receiver_id", "content")
 }
 
 func getMessagesByPairQuery(eventID, user1ID, user2ID string) squirrel.SelectBuilder {

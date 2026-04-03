@@ -149,6 +149,7 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверка прав (владелец wishlist)
 	wishlist, err := h.uc.GetByID(r.Context(), wishlistID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
@@ -196,13 +197,8 @@ func (h *WishlistHandler) GetItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var resp []response.WishlistItemResponse
-	for _, item := range items {
-		resp = append(resp, response.WishlistItemToResponse(&item))
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response.WishlistItemsToResponse(items))
 }
 
 func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +225,7 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверка прав владельца
 	item, err := h.uc.GetItemByID(r.Context(), itemID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)
@@ -271,6 +268,7 @@ func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверка прав владельца
 	item, err := h.uc.GetItemByID(r.Context(), itemID)
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrWishlistNotFound)

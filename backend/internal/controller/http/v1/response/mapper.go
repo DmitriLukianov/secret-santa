@@ -112,14 +112,14 @@ func WishlistItemToResponse(item *entity.WishlistItem) WishlistItemResponse {
 	}
 }
 
-func WishlistItemsToResponse(items []*entity.WishlistItem) []WishlistItemResponse {
+func WishlistItemsToResponse(items []entity.WishlistItem) []WishlistItemResponse {
 	if items == nil {
 		return nil
 	}
 
 	resp := make([]WishlistItemResponse, len(items))
-	for i, item := range items {
-		resp[i] = WishlistItemToResponse(item)
+	for i := range items {
+		resp[i] = WishlistItemToResponse(&items[i])
 	}
 	return resp
 }
@@ -137,14 +137,14 @@ func AssignmentToResponse(a *entity.Assignment) AssignmentResponse {
 	}
 }
 
-func AssignmentsToResponse(assignments []*entity.Assignment) []AssignmentResponse {
+func AssignmentsToResponse(assignments []entity.Assignment) []AssignmentResponse {
 	if assignments == nil {
 		return nil
 	}
 
 	resp := make([]AssignmentResponse, len(assignments))
-	for i, a := range assignments {
-		resp[i] = AssignmentToResponse(a)
+	for i := range assignments {
+		resp[i] = AssignmentToResponse(&assignments[i])
 	}
 	return resp
 }

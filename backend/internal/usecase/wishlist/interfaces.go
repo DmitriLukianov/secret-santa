@@ -9,8 +9,10 @@ import (
 )
 
 type Repository interface {
-	Create(ctx context.Context, wishlist entity.Wishlist) error
-	CreateItem(ctx context.Context, item entity.WishlistItem) error
+	// Create и CreateItem теперь возвращают полностью заполненные сущности из БД
+	Create(ctx context.Context, wishlist entity.Wishlist) (entity.Wishlist, error)
+	CreateItem(ctx context.Context, item entity.WishlistItem) (entity.WishlistItem, error)
+
 	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
 	GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)

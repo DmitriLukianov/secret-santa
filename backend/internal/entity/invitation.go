@@ -16,20 +16,19 @@ type Invitation struct {
 	UpdatedAt time.Time `db:"updated_at"`
 }
 
+// NewInvitation — чистый DB-first конструктор.
+// ID, CreatedAt, UpdatedAt теперь генерирует PostgreSQL.
 func NewInvitation(eventID, createdBy uuid.UUID, expiresIn time.Duration) Invitation {
-	now := time.Now()
 	if expiresIn == 0 {
 		expiresIn = 7 * 24 * time.Hour
 	}
 
 	return Invitation{
-		ID:        uuid.New(),
 		EventID:   eventID,
-		Token:     uuid.New().String(),
-		ExpiresAt: now.Add(expiresIn),
+		Token:     uuid.New().String(), // токен генерируем здесь (бизнес-логика)
+		ExpiresAt: time.Now().Add(expiresIn),
 		CreatedBy: createdBy,
-		CreatedAt: now,
-		UpdatedAt: now,
+		// ID, CreatedAt, UpdatedAt — будут заполнены БД
 	}
 }
 

@@ -121,6 +121,7 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		if valid {
 			assignments := make([]entity.Assignment, n)
 			for i := 0; i < n; i++ {
+				// Теперь NewAssignment — чистый DB-first конструктор
 				assignments[i] = entity.NewAssignment(eventID, ids[i], shuffled[i])
 			}
 			return assignments, nil
@@ -140,6 +141,7 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([
 		return nil, fmt.Errorf("failed to get assignments: %w", err)
 	}
 
+	// Возвращаем только назначение текущего пользователя (как Санта)
 	for _, a := range assignments {
 		if a.GiverID == userID {
 			return []entity.Assignment{a}, nil

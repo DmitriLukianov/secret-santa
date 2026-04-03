@@ -9,12 +9,14 @@ var qb = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 func createWishlistQuery() squirrel.InsertBuilder {
 	return qb.Insert("wishlists").
-		Columns("id", "participant_id", "visibility", "created_at", "updated_at")
+		Columns("participant_id", "visibility")
+	// id, created_at, updated_at — БД сама
 }
 
 func createWishlistItemQuery() squirrel.InsertBuilder {
 	return qb.Insert("wishlist_items").
-		Columns("id", "wishlist_id", "title", "link", "image_url", "comment", "created_at")
+		Columns("wishlist_id", "title", "link", "image_url", "comment")
+	// id, created_at — БД сама
 }
 
 func getWishlistByParticipantQuery(participantID string) squirrel.SelectBuilder {
@@ -28,6 +30,7 @@ func getWishlistItemsQuery(wishlistID string) squirrel.SelectBuilder {
 		From("wishlist_items").
 		Where(squirrel.Eq{"wishlist_id": wishlistID})
 }
+
 func updateWishlistItemQuery(itemID string) squirrel.UpdateBuilder {
 	return qb.Update("wishlist_items").
 		Where(squirrel.Eq{"id": itemID})

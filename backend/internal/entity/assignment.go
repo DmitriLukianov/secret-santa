@@ -14,12 +14,12 @@ type Assignment struct {
 	CreatedAt  time.Time `db:"created_at"`
 }
 
+// NewAssignment — чистый конструктор (DB-first).
+// ID и CreatedAt теперь генерирует PostgreSQL через RETURNING.
 func NewAssignment(eventID, giverID, receiverID uuid.UUID) Assignment {
 	return Assignment{
-		ID:         uuid.New(),
 		EventID:    eventID,
 		GiverID:    giverID,
 		ReceiverID: receiverID,
-		CreatedAt:  time.Now(),
 	}
 }
