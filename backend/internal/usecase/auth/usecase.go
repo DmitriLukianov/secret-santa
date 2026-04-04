@@ -4,41 +4,45 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+
+	"log/slog"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/oauth"
 	"secret-santa-backend/internal/usecase"
-
-	"log/slog"
 )
 
 type UseCase struct {
 	userUC           usecase.UserUseCase
 	emailService     usecase.EmailService
 	verificationRepo usecase.VerificationRepository
+	smtpEnabled      bool // кэшируем статус при инициализации
 	log              *slog.Logger
 }
 
-func New(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository) *UseCase {
+func New(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository, smtpEnabled bool) *UseCase {
 	return &UseCase{
 		userUC:           userUC,
 		emailService:     emailService,
 		verificationRepo: verificationRepo,
+		smtpEnabled:      smtpEnabled,
 	}
 }
 
-func NewWithLogger(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository, log *slog.Logger) *UseCase {
+func NewWithLogger(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository, smtpEnabled bool, log *slog.Logger) *UseCase {
 	return &UseCase{
 		userUC:           userUC,
 		emailService:     emailService,
 		verificationRepo: verificationRepo,
+		smtpEnabled:      smtpEnabled,
 		log:              log,
 	}
 }
 
-// LoginWithOAuth — GitHub OAuth + уведомление о входе
+// LoginWithOAuth — вход через OAuth (GitHub и др.) + уведомление о входе
 func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error) {
 	if uc.log != nil {
 		uc.log.Info("oauth login started",
@@ -72,7 +76,6 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		OAuthID:       info.ID,
 		OAuthProvider: info.Provider,
 	}
-
 	createdUser, err := uc.userUC.Create(ctx, createInput)
 	if err != nil {
 		return "", fmt.Errorf("failed to create user: %w", err)
@@ -81,20 +84,21 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 	if uc.log != nil {
 		uc.log.Info("new oauth user created", slog.String("user_id", createdUser.ID.String()))
 	}
-
 	if uc.emailService != nil {
 		_ = uc.emailService.SendLoginNotification(ctx, createdUser.Email, createdUser.Name)
 	}
 	return createdUser.ID.String(), nil
 }
 
+// SendOTP — отправить код подтверждения на email.
+// Явно возвращает ошибку если SMTP не настроен — OTP без email не имеет смысла.
 func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 	if uc.log != nil {
 		uc.log.Info("send otp started", slog.String("email", email))
 	}
 
-	if uc.emailService == nil {
-		return fmt.Errorf("email service is not configured")
+	if !uc.smtpEnabled {
+		return fmt.Errorf("email service is not configured: set SMTP_USERNAME, SMTP_PASSWORD and FROM_EMAIL")
 	}
 
 	code, err := uc.emailService.SendOTP(ctx, email)
@@ -110,7 +114,7 @@ func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 	return nil
 }
 
-// VerifyOTP — почищенная версия (без дублирования пользователей)
+// VerifyOTP — проверить код и вернуть userID.
 func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, error) {
 	if uc.log != nil {
 		uc.log.Info("verify otp started", slog.String("email", email))
@@ -132,14 +136,16 @@ func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, e
 		return user.ID.String(), nil
 	}
 
-	// Если пользователя нет — создаём (passwordless)
+	// Если пользователя нет — создаём (passwordless регистрация)
+	// Берём имя из email (часть до @) как дефолтное
+	defaultName := nameFromEmail(email)
+
 	createInput := dto.CreateUserInput{
-		Name:          "Пользователь", // можно потом улучшить
+		Name:          defaultName,
 		Email:         email,
 		OAuthID:       email,
 		OAuthProvider: "email",
 	}
-
 	createdUser, err := uc.userUC.Create(ctx, createInput)
 	if err != nil {
 		return "", fmt.Errorf("failed to create user: %w", err)
@@ -148,6 +154,15 @@ func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, e
 	if uc.emailService != nil {
 		_ = uc.emailService.SendLoginNotification(ctx, createdUser.Email, createdUser.Name)
 	}
-
 	return createdUser.ID.String(), nil
+}
+
+// nameFromEmail — извлекает часть до @ и делает из неё читаемое имя.
+// "john.doe@example.com" → "john.doe"
+func nameFromEmail(email string) string {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) == 0 || parts[0] == "" {
+		return "Пользователь"
+	}
+	return parts[0]
 }

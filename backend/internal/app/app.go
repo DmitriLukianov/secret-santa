@@ -39,7 +39,6 @@ type App struct {
 
 func New() *App {
 	cfg := config.Load()
-
 	log := logger.New(cfg.LogLevel, cfg.AppEnv)
 
 	db, err := database.NewDB(cfg.DatabaseURL)
@@ -48,6 +47,7 @@ func New() *App {
 		panic(err)
 	}
 
+	// Репозитории
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
 	participantRepo := participantrepo.New(db)
@@ -55,27 +55,23 @@ func New() *App {
 	wishlistRepo := wishlistrepo.New(db)
 	invitationRepo := invitationrepo.New(db)
 	chatRepo := chatrepo.New(db)
-
-	// === Новый репозиторий для OTP ===
 	verificationRepo := verificationrepo.New(db)
 
+	// Use cases
 	userUC := userusecase.NewWithLogger(userRepo, log)
-
 	emailService := email.New(cfg, log)
 
-	// Обновлённый authUC
-	authUC := authusecase.NewWithLogger(userUC, emailService, verificationRepo, log)
+	// Передаём smtpEnabled явно — authUC использует его чтобы не принимать OTP без SMTP
+	authUC := authusecase.NewWithLogger(userUC, emailService, verificationRepo, cfg.SMTPEnabled(), log)
 
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
-
 	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, userUC, emailService, log)
-
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
-
-	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, log)
+	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, cfg.AppBaseURL, log)
 	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log)
 
+	// Handlers
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)

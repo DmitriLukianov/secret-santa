@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 type EventHandler struct {
@@ -92,7 +92,14 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.EventsToResponse(events))
 }
 
+// UpdateEvent — только организатор может редактировать (проверка в usecase)
 func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -121,7 +128,7 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		MaxParticipants: req.MaxParticipants,
 	}
 
-	if err := h.uc.Update(r.Context(), id, input); err != nil {
+	if err := h.uc.Update(r.Context(), id, userID, input); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
@@ -129,7 +136,14 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// DeleteEvent — только организатор (проверка в usecase)
 func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -137,7 +151,7 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.uc.Delete(r.Context(), id); err != nil {
+	if err := h.uc.Delete(r.Context(), id, userID); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}

@@ -243,7 +243,6 @@ type App struct {
 
 func New() *App {
 	cfg := config.Load()
-
 	log := logger.New(cfg.LogLevel, cfg.AppEnv)
 
 	db, err := database.NewDB(cfg.DatabaseURL)
@@ -252,6 +251,7 @@ func New() *App {
 		panic(err)
 	}
 
+	// Репозитории
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
 	participantRepo := participantrepo.New(db)
@@ -259,27 +259,23 @@ func New() *App {
 	wishlistRepo := wishlistrepo.New(db)
 	invitationRepo := invitationrepo.New(db)
 	chatRepo := chatrepo.New(db)
-
-	// === Новый репозиторий для OTP ===
 	verificationRepo := verificationrepo.New(db)
 
+	// Use cases
 	userUC := userusecase.NewWithLogger(userRepo, log)
-
 	emailService := email.New(cfg, log)
 
-	// Обновлённый authUC
-	authUC := authusecase.NewWithLogger(userUC, emailService, verificationRepo, log)
+	// Передаём smtpEnabled явно — authUC использует его чтобы не принимать OTP без SMTP
+	authUC := authusecase.NewWithLogger(userUC, emailService, verificationRepo, cfg.SMTPEnabled(), log)
 
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
-
 	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, userUC, emailService, log)
-
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
-
-	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, log)
+	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, cfg.AppBaseURL, log)
 	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log)
 
+	// Handlers
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)
@@ -344,26 +340,34 @@ import (
 )
 
 type Config struct {
-	AppPort  string `env:"APP_PORT" envDefault:"8080"`
-	AppEnv   string `env:"APP_ENV" envDefault:"local"`
-	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
+	AppPort    string `env:"APP_PORT" envDefault:"8080"`
+	AppEnv     string `env:"APP_ENV" envDefault:"local"`
+	LogLevel   string `env:"LOG_LEVEL" envDefault:"info"`
+	AppBaseURL string `env:"APP_BASE_URL" envDefault:"http://localhost:8080"`
 
 	DatabaseURL string `env:"DATABASE_URL"`
 
 	JWTSecret string        `env:"JWT_SECRET"`
 	JWTTTL    time.Duration `env:"JWT_TTL" envDefault:"24h"`
 
-	// === SMTP Mail.ru ===
+	// SMTP — опциональный. Если не задан, email-уведомления отключаются.
+	// Сервис стартует без них. Проверяй через cfg.SMTPEnabled().
 	SMTPHost     string `env:"SMTP_HOST" envDefault:"smtp.mail.ru"`
 	SMTPPort     int    `env:"SMTP_PORT" envDefault:"587"`
-	SMTPUsername string `env:"SMTP_USERNAME"` // ваш полный email, например: vasya@mail.ru
-	SMTPPassword string `env:"SMTP_PASSWORD"` // приложенный пароль (НЕ основной!)
-	FromEmail    string `env:"FROM_EMAIL"`    // от кого будут письма (обычно тот же email)
+	SMTPUsername string `env:"SMTP_USERNAME"`
+	SMTPPassword string `env:"SMTP_PASSWORD"`
+	FromEmail    string `env:"FROM_EMAIL"`
 
 	OAuthProvider      string `env:"OAUTH_PROVIDER" envDefault:"github"`
 	GithubClientID     string `env:"GITHUB_CLIENT_ID"`
 	GithubClientSecret string `env:"GITHUB_CLIENT_SECRET"`
 	GithubRedirectURL  string `env:"GITHUB_REDIRECT_URL"`
+}
+
+// SMTPEnabled возвращает true если все необходимые SMTP-переменные заданы.
+// Используй это перед отправкой писем вместо падения сервиса.
+func (c *Config) SMTPEnabled() bool {
+	return c.SMTPUsername != "" && c.SMTPPassword != "" && c.FromEmail != ""
 }
 
 func Load() *Config {
@@ -372,12 +376,15 @@ func Load() *Config {
 	}
 
 	cfg := &Config{
-		AppPort:     getEnv("APP_PORT", "8080"),
-		AppEnv:      getEnv("APP_ENV", "local"),
-		LogLevel:    getEnv("LOG_LEVEL", "info"),
+		AppPort:    getEnv("APP_PORT", "8080"),
+		AppEnv:     getEnv("APP_ENV", "local"),
+		LogLevel:   getEnv("LOG_LEVEL", "info"),
+		AppBaseURL: getEnv("APP_BASE_URL", "http://localhost:8080"),
+
 		DatabaseURL: getEnv("DATABASE_URL", ""),
-		JWTSecret:   getEnv("JWT_SECRET", ""),
-		JWTTTL:      parseDuration(getEnv("JWT_TTL", "24h")),
+
+		JWTSecret: getEnv("JWT_SECRET", ""),
+		JWTTTL:    parseDuration(getEnv("JWT_TTL", "24h")),
 
 		SMTPHost:     getEnv("SMTP_HOST", "smtp.mail.ru"),
 		SMTPPort:     getIntEnv("SMTP_PORT", 587),
@@ -391,15 +398,17 @@ func Load() *Config {
 		GithubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", ""),
 	}
 
-	// Обязательные проверки
+	// Обязательные переменные — без них сервис не может работать совсем
 	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
 	if cfg.JWTSecret == "" || len(cfg.JWTSecret) < 32 {
 		log.Fatal("JWT_SECRET must be at least 32 characters")
 	}
-	if cfg.SMTPUsername == "" || cfg.SMTPPassword == "" || cfg.FromEmail == "" {
-		log.Fatal("SMTP_USERNAME, SMTP_PASSWORD and FROM_EMAIL are required for email notifications")
+
+	// SMTP — предупреждаем, но не падаем
+	if !cfg.SMTPEnabled() {
+		log.Println("WARNING: SMTP not configured — email notifications are disabled")
 	}
 
 	return cfg
@@ -1294,15 +1303,15 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 type EventHandler struct {
@@ -1381,7 +1390,14 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.EventsToResponse(events))
 }
 
+// UpdateEvent — только организатор может редактировать (проверка в usecase)
 func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -1410,7 +1426,7 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		MaxParticipants: req.MaxParticipants,
 	}
 
-	if err := h.uc.Update(r.Context(), id, input); err != nil {
+	if err := h.uc.Update(r.Context(), id, userID, input); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
@@ -1418,7 +1434,14 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// DeleteEvent — только организатор (проверка в usecase)
 func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -1426,7 +1449,7 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.uc.Delete(r.Context(), id); err != nil {
+	if err := h.uc.Delete(r.Context(), id, userID); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
@@ -1592,13 +1615,13 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 type ParticipantHandler struct {
@@ -1623,7 +1646,6 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Теперь Create возвращает полностью заполненный объект из БД
 	participant, err := h.uc.Create(r.Context(), eventID, userID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		response.WriteHTTPError(w, err)
@@ -1653,6 +1675,7 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response.ParticipantsToResponse(participants))
 }
 
+// MarkGiftSent — только сам участник может это сделать (проверка в usecase).
 func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -1661,14 +1684,23 @@ func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.uc.MarkGiftSent(r.Context(), id); err != nil {
+	requesterID, err := helpers.GetUserID(r)
+	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
 
+	if err := h.uc.MarkGiftSent(r.Context(), id, requesterID); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Подарок отмечен как отправленный"})
 }
 
+// Delete — только сам участник может удалить себя (проверка в usecase).
 func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -1677,7 +1709,13 @@ func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.uc.Delete(r.Context(), id); err != nil {
+	requesterID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	if err := h.uc.Delete(r.Context(), id, requesterID); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
@@ -1694,10 +1732,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"secret-santa-backend/internal/controller/http/middleware"
 	"secret-santa-backend/internal/oauth"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func NewRouter(
@@ -1712,17 +1750,15 @@ func NewRouter(
 	jwtManager *oauth.JWTManager,
 	log *slog.Logger,
 ) *chi.Mux {
-
 	router := chi.NewRouter()
 
 	router.Use(middleware.RecoveryMiddleware)
 	router.Use(middleware.TimeoutMiddleware(10 * time.Second))
 
+	// Публичные маршруты
 	router.Route("/auth", func(r chi.Router) {
 		r.Get("/login", authHandler.Login)
 		r.Get("/callback", authHandler.Callback)
-
-		// === Новые эндпоинты для входа по email + OTP ===
 		r.Post("/send-otp", authHandler.SendOTP)
 		r.Post("/verify-otp", authHandler.VerifyOTP)
 	})
@@ -1733,18 +1769,26 @@ func NewRouter(
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	// Все защищённые маршруты
 	router.Group(func(r chi.Router) {
 		r.Use(middleware.NewAuthMiddleware(jwtManager, log).Handler)
 
+		// --- Users ---
+		// ВАЖНО: /me/* должны быть зарегистрированы ДО /{id},
+		// иначе chi будет матчить "me" как UUID и возвращать 400.
 		r.Route("/users", func(r chi.Router) {
+			r.Get("/me", userHandler.GetMe)
+			r.Patch("/me", userHandler.UpdateMe)
+			r.Get("/me/events", userHandler.GetMyEvents)
+
 			r.Post("/", userHandler.CreateUser)
 			r.Get("/", userHandler.GetUsers)
 			r.Get("/{id}", userHandler.GetUserByID)
 			r.Put("/{id}", userHandler.UpdateUser)
 			r.Delete("/{id}", userHandler.DeleteUser)
-			r.Get("/me/events", userHandler.GetMyEvents)
 		})
 
+		// --- Events ---
 		r.Route("/events", func(r chi.Router) {
 			r.Post("/", eventHandler.CreateEvent)
 			r.Get("/", eventHandler.GetEvents)
@@ -1752,17 +1796,22 @@ func NewRouter(
 			r.Put("/{id}", eventHandler.UpdateEvent)
 			r.Delete("/{id}", eventHandler.DeleteEvent)
 
+			// Смена статуса — только организатор (проверяется в usecase)
 			r.Post("/{id}/open-invitation", eventHandler.OpenInvitation)
 			r.Post("/{id}/close-registration", eventHandler.CloseRegistration)
 			r.Post("/{id}/start-drawing", eventHandler.StartDrawing)
 			r.Post("/{id}/finish", eventHandler.FinishEvent)
 			r.Post("/{id}/cancel", eventHandler.CancelEvent)
 
+			// Участники события
 			r.Post("/{eventId}/participants", participantHandler.Add)
 			r.Get("/{eventId}/participants", participantHandler.GetByEvent)
+
+			// Жеребьёвка
 			r.Post("/{eventId}/assign", assignmentHandler.Draw)
 			r.Get("/{eventId}/assignments", assignmentHandler.GetByEvent)
 
+			// Чат (анонимные вопросы тайному санте)
 			r.Route("/{eventId}/chat", func(r chi.Router) {
 				r.Get("/recipient", chatHandler.GetRecipientChat)
 				r.Get("/sender", chatHandler.GetSenderChat)
@@ -1770,18 +1819,23 @@ func NewRouter(
 			})
 		})
 
+		// --- Participants (отдельные операции) ---
 		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
 		r.Delete("/participants/{id}", participantHandler.Delete)
 
+		// --- Wishlists ---
+		// Вишлист текущего пользователя для события
 		r.Route("/users/me/wishlist", func(r chi.Router) {
 			r.Post("/", wishlistHandler.Create)
 			r.Get("/", wishlistHandler.GetByUser)
 		})
 
+		// Вишлист конкретного участника (с проверкой видимости)
 		r.Route("/wishlists/{participantId}", func(r chi.Router) {
 			r.Get("/", wishlistHandler.GetByParticipant)
 		})
 
+		// Элементы вишлиста
 		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {
 			r.Post("/", wishlistHandler.AddItem)
 			r.Get("/", wishlistHandler.GetItems)
@@ -1789,6 +1843,7 @@ func NewRouter(
 			r.Delete("/{itemId}", wishlistHandler.DeleteItem)
 		})
 
+		// --- Invitations ---
 		r.Route("/invitations", func(r chi.Router) {
 			r.Post("/generate", invitationHandler.GenerateInvite)
 		})
@@ -1806,15 +1861,15 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 type UserHandler struct {
@@ -1827,6 +1882,62 @@ func NewUserHandler(uc usecase.UserUseCase, eventUC usecase.EventUseCase) *UserH
 		uc:      uc,
 		eventUC: eventUC,
 	}
+}
+
+// GetMe — профиль текущего авторизованного пользователя
+func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	userID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	user, err := h.uc.GetByID(r.Context(), userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.UserToResponse(user))
+}
+
+// UpdateMe — обновление профиля текущего пользователя (partial update)
+func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
+	userID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	var req request.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	input := dto.UpdateUserInput{
+		Name:  req.Name,
+		Email: req.Email,
+	}
+	if err := h.uc.Update(r.Context(), userID, input); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	// Возвращаем обновлённый профиль
+	user, err := h.uc.GetByID(r.Context(), userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response.UserToResponse(user))
 }
 
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -1846,7 +1957,6 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		OAuthID:       req.OAuthID,
 		OAuthProvider: req.OAuthProvider,
 	}
-
 	user, err := h.uc.Create(r.Context(), input)
 	if err != nil {
 		response.WriteHTTPError(w, err)
@@ -1909,7 +2019,6 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Name:  req.Name,
 		Email: req.Email,
 	}
-
 	if err := h.uc.Update(r.Context(), id, input); err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -2383,22 +2492,6 @@ type UpdateEventInput struct {
 	EndDate         *time.Time `json:"endDate"`
 	MaxParticipants *int       `json:"maxParticipants"`
 }
-
-type EventResponse struct {
-	ID              string     `json:"id"`
-	Title           string     `json:"title"`
-	Description     *string    `json:"description,omitempty"`
-	Rules           *string    `json:"rules,omitempty"`
-	Recommendations *string    `json:"recommendations,omitempty"`
-	OrganizerID     string     `json:"organizerId"`
-	StartDate       time.Time  `json:"startDate"`
-	DrawDate        *time.Time `json:"drawDate,omitempty"`
-	EndDate         time.Time  `json:"endDate"`
-	Status          string     `json:"status"`
-	MaxParticipants int        `json:"maxParticipants"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
-}
 </file>
 
 <file path="internal/dto/invitation.go">
@@ -2489,60 +2582,59 @@ func New(cfg *config.Config, log *slog.Logger) *Service {
 	return &Service{cfg: cfg, log: log}
 }
 
-// SendLoginNotification — уведомление при входе через GitHub
+// SendLoginNotification — уведомление при входе
 func (s *Service) SendLoginNotification(ctx context.Context, email, name string) error {
 	subject := "✅ Вы успешно вошли в Тайный Санта"
 	body := fmt.Sprintf(`Привет, %s!
-
+ 
 Вы только что вошли в аккаунт Тайный Санта.
-
+ 
 Если это были не вы — немедленно напишите нам.
-
+ 
 С наилучшими пожеланиями,
 Команда Тайный Санта`, name)
 
 	return s.send(ctx, email, subject, body)
 }
 
-// SendOTP — отправка 6-значного кода
+// SendOTP — отправка 6-значного кода подтверждения
 func (s *Service) SendOTP(ctx context.Context, email string) (string, error) {
 	code := s.generateOTP()
 
 	subject := "🔑 Код подтверждения для Тайный Санта"
 	body := fmt.Sprintf(`Ваш код подтверждения: %s
-
+ 
 Код действителен 10 минут.
-
+ 
 Если вы не запрашивали код — просто проигнорируйте это письмо.
-
+ 
 С наилучшими пожеланиями,
 Команда Тайный Санта`, code)
 
-	err := s.send(ctx, email, subject, body)
-	if err != nil {
+	if err := s.send(ctx, email, subject, body); err != nil {
 		return "", err
 	}
 	return code, nil
 }
 
-// === НОВОЕ: Уведомление при начале жеребьёвки ===
+// SendDrawNotification — уведомление участникам о завершении жеребьёвки
 func (s *Service) SendDrawNotification(ctx context.Context, email, eventTitle string) error {
 	subject := "🎲 Жеребьёвка проведена!"
 	body := fmt.Sprintf(`Привет!
-
+ 
 В событии «%s» проведена жеребьёвка.
-
-Теперь вы можете посмотреть, кому дарите подарок, в разделе "Мои события".
-
+ 
+Теперь вы можете посмотреть, кому дарите подарок, в разделе «Мои события».
+ 
 Удачи в Тайном Санте! 🎁
-
+ 
 С наилучшими пожеланиями,
 Команда Тайный Санта`, eventTitle)
 
 	return s.send(ctx, email, subject, body)
 }
 
-// generateOTP — 6-значный код
+// generateOTP — криптостойкий 6-значный код
 func (s *Service) generateOTP() string {
 	const digits = "0123456789"
 	code := make([]byte, 6)
@@ -2553,24 +2645,41 @@ func (s *Service) generateOTP() string {
 	return string(code)
 }
 
+// send — внутренний метод отправки. Тихо возвращает nil если SMTP не настроен.
+// Это намеренно: email — вспомогательная функция, не должна ломать основной флоу.
 func (s *Service) send(ctx context.Context, to, subject, body string) error {
+	if !s.cfg.SMTPEnabled() {
+		if s.log != nil {
+			s.log.Debug("SMTP not configured, skipping email",
+				slog.String("to", to),
+				slog.String("subject", subject),
+			)
+		}
+		return nil
+	}
+
 	if s.log != nil {
-		s.log.Info("sending email", slog.String("to", to), slog.String("subject", subject))
+		s.log.Info("sending email",
+			slog.String("to", to),
+			slog.String("subject", subject),
+		)
 	}
 
 	auth := smtp.PlainAuth("", s.cfg.SMTPUsername, s.cfg.SMTPPassword, s.cfg.SMTPHost)
 
-	msg := []byte(fmt.Sprintf("From: %s\r\n"+
-		"To: %s\r\n"+
-		"Subject: %s\r\n"+
-		"Content-Type: text/plain; charset=UTF-8\r\n\r\n"+
-		"%s\r\n", s.cfg.FromEmail, to, subject, body))
+	msg := []byte(fmt.Sprintf(
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n",
+		s.cfg.FromEmail, to, subject, body,
+	))
 
 	addr := fmt.Sprintf("%s:%d", s.cfg.SMTPHost, s.cfg.SMTPPort)
 
 	if err := smtp.SendMail(addr, auth, s.cfg.FromEmail, []string{to}, msg); err != nil {
 		if s.log != nil {
-			s.log.Error("failed to send email", slog.String("to", to), slog.String("error", err.Error()))
+			s.log.Error("failed to send email",
+				slog.String("to", to),
+				slog.String("error", err.Error()),
+			)
 		}
 		return fmt.Errorf("failed to send email: %w", err)
 	}
@@ -4737,9 +4846,10 @@ package assignment
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	"math/big"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
@@ -4801,7 +4911,7 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		if uc.log != nil {
 			uc.log.Error("failed to get event", slog.String("error", err.Error()))
 		}
-		return fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+		return fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
 	}
 
 	if eventPtr.OrganizerID != userID {
@@ -4835,29 +4945,28 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
 
-	// === УВЕДОМЛЕНИЯ ПРИ ЖЕРЕБЬЁВКЕ ===
+	// Уведомления — не блокируют основной флоу, ошибки только логируются
 	if uc.emailService != nil && uc.userUC != nil {
 		notified := 0
 		for _, p := range participants {
 			userPtr, err := uc.userUC.GetByID(ctx, p.UserID)
 			if err != nil || userPtr == nil {
 				if uc.log != nil {
-					uc.log.Warn("failed to resolve participant email for draw notification",
-						slog.String("event_id", eventID.String()),
+					uc.log.Warn("failed to resolve participant for draw notification",
 						slog.String("user_id", p.UserID.String()),
 						slog.String("error", fmt.Sprint(err)),
 					)
 				}
 				continue
 			}
-
-			if err := uc.emailService.SendDrawNotification(ctx, userPtr.Email, eventPtr.Title); err != nil && uc.log != nil {
-				uc.log.Warn("failed to send draw notification",
-					slog.String("event_id", eventID.String()),
-					slog.String("user_id", userPtr.ID.String()),
-					slog.String("email", userPtr.Email),
-					slog.String("error", err.Error()),
-				)
+			if err := uc.emailService.SendDrawNotification(ctx, userPtr.Email, eventPtr.Title); err != nil {
+				if uc.log != nil {
+					uc.log.Warn("failed to send draw notification",
+						slog.String("user_id", userPtr.ID.String()),
+						slog.String("email", userPtr.Email),
+						slog.String("error", err.Error()),
+					)
+				}
 				continue
 			}
 			notified++
@@ -4871,13 +4980,13 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		uc.log.Info("draw completed successfully",
 			slog.String("event_id", eventID.String()),
 			slog.Int("assignments_created", len(assignments)),
-			slog.Int("participants_notified", len(participants)),
 		)
 	}
-
 	return nil
 }
 
+// createDerangement — создаёт перестановку без неподвижных точек (никто не дарит сам себе).
+// Использует crypto/rand для криптографически стойкого перемешивания.
 func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Participant) ([]entity.Assignment, error) {
 	n := len(participants)
 	ids := make([]uuid.UUID, n)
@@ -4885,13 +4994,17 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		ids[i] = p.UserID
 	}
 
-	maxAttempts := 200
-
+	const maxAttempts = 200
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shuffled := make([]uuid.UUID, n)
 		copy(shuffled, ids)
-		rand.Shuffle(n, func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
 
+		// Fisher-Yates shuffle с crypto/rand
+		if err := cryptoShuffle(shuffled); err != nil {
+			return nil, fmt.Errorf("failed to shuffle: %w", err)
+		}
+
+		// Проверяем что нет самоназначений
 		valid := true
 		for i := 0; i < n; i++ {
 			if shuffled[i] == ids[i] {
@@ -4899,6 +5012,7 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 				break
 			}
 		}
+
 		if valid {
 			assignments := make([]entity.Assignment, n)
 			for i := 0; i < n; i++ {
@@ -4911,6 +5025,22 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 	return nil, fmt.Errorf("failed to generate valid derangement after %d attempts", maxAttempts)
 }
 
+// cryptoShuffle — Fisher-Yates с crypto/rand вместо math/rand
+func cryptoShuffle(s []uuid.UUID) error {
+	n := len(s)
+	for i := n - 1; i > 0; i-- {
+		jBig, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return err
+		}
+		j := int(jBig.Int64())
+		s[i], s[j] = s[j], s[i]
+	}
+	return nil
+}
+
+// GetByEvent возвращает назначение текущего пользователя (только своё).
+// Участник видит только кому он дарит — не весь список.
 func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {
 	if eventID == uuid.Nil || userID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -4921,6 +5051,7 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([
 		return nil, fmt.Errorf("failed to get assignments: %w", err)
 	}
 
+	// Каждый участник видит только своё назначение
 	for _, a := range assignments {
 		if a.GiverID == userID {
 			return []entity.Assignment{a}, nil
@@ -4938,41 +5069,45 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+
+	"log/slog"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/oauth"
 	"secret-santa-backend/internal/usecase"
-
-	"log/slog"
 )
 
 type UseCase struct {
 	userUC           usecase.UserUseCase
 	emailService     usecase.EmailService
 	verificationRepo usecase.VerificationRepository
+	smtpEnabled      bool // кэшируем статус при инициализации
 	log              *slog.Logger
 }
 
-func New(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository) *UseCase {
+func New(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository, smtpEnabled bool) *UseCase {
 	return &UseCase{
 		userUC:           userUC,
 		emailService:     emailService,
 		verificationRepo: verificationRepo,
+		smtpEnabled:      smtpEnabled,
 	}
 }
 
-func NewWithLogger(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository, log *slog.Logger) *UseCase {
+func NewWithLogger(userUC usecase.UserUseCase, emailService usecase.EmailService, verificationRepo usecase.VerificationRepository, smtpEnabled bool, log *slog.Logger) *UseCase {
 	return &UseCase{
 		userUC:           userUC,
 		emailService:     emailService,
 		verificationRepo: verificationRepo,
+		smtpEnabled:      smtpEnabled,
 		log:              log,
 	}
 }
 
-// LoginWithOAuth — GitHub OAuth + уведомление о входе
+// LoginWithOAuth — вход через OAuth (GitHub и др.) + уведомление о входе
 func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error) {
 	if uc.log != nil {
 		uc.log.Info("oauth login started",
@@ -5006,7 +5141,6 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		OAuthID:       info.ID,
 		OAuthProvider: info.Provider,
 	}
-
 	createdUser, err := uc.userUC.Create(ctx, createInput)
 	if err != nil {
 		return "", fmt.Errorf("failed to create user: %w", err)
@@ -5015,20 +5149,21 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 	if uc.log != nil {
 		uc.log.Info("new oauth user created", slog.String("user_id", createdUser.ID.String()))
 	}
-
 	if uc.emailService != nil {
 		_ = uc.emailService.SendLoginNotification(ctx, createdUser.Email, createdUser.Name)
 	}
 	return createdUser.ID.String(), nil
 }
 
+// SendOTP — отправить код подтверждения на email.
+// Явно возвращает ошибку если SMTP не настроен — OTP без email не имеет смысла.
 func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 	if uc.log != nil {
 		uc.log.Info("send otp started", slog.String("email", email))
 	}
 
-	if uc.emailService == nil {
-		return fmt.Errorf("email service is not configured")
+	if !uc.smtpEnabled {
+		return fmt.Errorf("email service is not configured: set SMTP_USERNAME, SMTP_PASSWORD and FROM_EMAIL")
 	}
 
 	code, err := uc.emailService.SendOTP(ctx, email)
@@ -5044,7 +5179,7 @@ func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 	return nil
 }
 
-// VerifyOTP — почищенная версия (без дублирования пользователей)
+// VerifyOTP — проверить код и вернуть userID.
 func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, error) {
 	if uc.log != nil {
 		uc.log.Info("verify otp started", slog.String("email", email))
@@ -5066,14 +5201,16 @@ func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, e
 		return user.ID.String(), nil
 	}
 
-	// Если пользователя нет — создаём (passwordless)
+	// Если пользователя нет — создаём (passwordless регистрация)
+	// Берём имя из email (часть до @) как дефолтное
+	defaultName := nameFromEmail(email)
+
 	createInput := dto.CreateUserInput{
-		Name:          "Пользователь", // можно потом улучшить
+		Name:          defaultName,
 		Email:         email,
 		OAuthID:       email,
 		OAuthProvider: "email",
 	}
-
 	createdUser, err := uc.userUC.Create(ctx, createInput)
 	if err != nil {
 		return "", fmt.Errorf("failed to create user: %w", err)
@@ -5082,8 +5219,17 @@ func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, e
 	if uc.emailService != nil {
 		_ = uc.emailService.SendLoginNotification(ctx, createdUser.Email, createdUser.Name)
 	}
-
 	return createdUser.ID.String(), nil
+}
+
+// nameFromEmail — извлекает часть до @ и делает из неё читаемое имя.
+// "john.doe@example.com" → "john.doe"
+func nameFromEmail(email string) string {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) == 0 || parts[0] == "" {
+		return "Пользователь"
+	}
+	return parts[0]
 }
 </file>
 
@@ -5297,7 +5443,6 @@ import (
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
-
 	participant "secret-santa-backend/internal/usecase/participant"
 
 	"github.com/google/uuid"
@@ -5321,7 +5466,7 @@ func NewWithLogger(repo Repository, participantRepo participant.Repository, log 
 	}
 }
 
-// Create — создаёт событие + автоматически добавляет организатора как участника
+// Create — создаёт событие + добавляет организатора как участника
 func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error) {
 	if uc.log != nil {
 		uc.log.Info("create event started",
@@ -5346,65 +5491,60 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		input.MaxParticipants,
 	)
 
-	// 1. Создаём событие (теперь возвращаем полные данные из БД)
 	createdEvent, err := uc.repo.Create(ctx, event)
 	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create event", slog.String("error", err.Error()))
 		}
-		return entity.Event{}, fmt.Errorf("%w: %w", definitions.ErrConflict, err)
+		return entity.Event{}, fmt.Errorf("%w: %s", definitions.ErrConflict, err.Error())
 	}
 
-	// 2. Создаём участника-организатора
+	// Автоматически добавляем организатора как участника
 	organizerParticipant := entity.NewParticipant(createdEvent.ID, organizerID, definitions.ParticipantRoleOrganizer)
-
-	// ← ИСПРАВЛЕНИЕ ЗДЕСЬ
-	_, err = uc.participantRepo.Create(ctx, organizerParticipant)
-	if err != nil {
+	if _, err = uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
 		if uc.log != nil {
-			uc.log.Error("failed to create organizer as participant", slog.String("error", err.Error()))
+			uc.log.Error("failed to create organizer participant", slog.String("error", err.Error()))
 		}
 		return entity.Event{}, fmt.Errorf("failed to create organizer participant: %w", err)
 	}
 
 	if uc.log != nil {
-		uc.log.Info("event created successfully with organizer as participant",
+		uc.log.Info("event created successfully",
 			slog.String("event_id", createdEvent.ID.String()),
-			slog.String("participant_id", organizerParticipant.ID.String()), // ID из entity (он уже сгенерирован)
 		)
 	}
-
 	return createdEvent, nil
 }
-
-// ==================== Остальные методы без изменений ====================
 
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error) {
 	if id == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
 	}
-
-	if uc.log != nil {
-		uc.log.Info("get event by id started", slog.String("event_id", id.String()))
-	}
-
 	event, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+		return nil, fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
 	}
 	return event, nil
 }
 
 func (uc *UseCase) GetAll(ctx context.Context) ([]entity.Event, error) {
-	if uc.log != nil {
-		uc.log.Info("get all events started")
-	}
 	return uc.repo.GetAll(ctx)
 }
 
-func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error {
-	if id == uuid.Nil {
+// Update — обновление события. Только организатор может это делать.
+func (uc *UseCase) Update(ctx context.Context, id, userID uuid.UUID, input dto.UpdateEventInput) error {
+	if id == uuid.Nil || userID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
+	}
+
+	eventPtr, err := uc.repo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
+	}
+
+	// Только организатор может редактировать событие
+	if eventPtr.OrganizerID != userID {
+		return definitions.ErrNotOrganizer
 	}
 
 	if uc.log != nil {
@@ -5424,34 +5564,19 @@ func (uc *UseCase) Update(ctx context.Context, id uuid.UUID, input dto.UpdateEve
 	return nil
 }
 
-func (uc *UseCase) UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error {
-	if id == uuid.Nil {
+// Delete — удаление события. Только организатор.
+func (uc *UseCase) Delete(ctx context.Context, id, userID uuid.UUID) error {
+	if id == uuid.Nil || userID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
 	}
 
-	if uc.log != nil {
-		uc.log.Info("update event status started",
-			slog.String("event_id", id.String()),
-			slog.String("status", string(status)),
-		)
+	eventPtr, err := uc.repo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
 	}
 
-	if err := uc.repo.UpdateStatus(ctx, id, status); err != nil {
-		if uc.log != nil {
-			uc.log.Error("failed to update event status", slog.String("error", err.Error()))
-		}
-		return err
-	}
-
-	if uc.log != nil {
-		uc.log.Info("event status updated successfully", slog.String("event_id", id.String()))
-	}
-	return nil
-}
-
-func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
-	if id == uuid.Nil {
-		return definitions.ErrInvalidUserInput
+	if eventPtr.OrganizerID != userID {
+		return definitions.ErrNotOrganizer
 	}
 
 	if uc.log != nil {
@@ -5498,7 +5623,7 @@ func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newSt
 
 	eventPtr, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+		return fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
 	}
 
 	if eventPtr.OrganizerID != userID {
@@ -5510,7 +5635,6 @@ func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newSt
 	}
 
 	oldStatus := eventPtr.Status
-
 	if err := eventPtr.TransitionTo(newStatus); err != nil {
 		return err
 	}
@@ -5534,25 +5658,18 @@ func (uc *UseCase) GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.
 		return nil, definitions.ErrInvalidUserInput
 	}
 
-	if uc.log != nil {
-		uc.log.Info("get my events started", slog.String("user_id", userID.String()))
-	}
-
 	events, err := uc.repo.GetEventsForUser(ctx, userID)
 	if err != nil {
-		if uc.log != nil {
-			uc.log.Error("failed to get my events", slog.String("error", err.Error()))
-		}
-		return nil, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
-	}
-
-	if uc.log != nil {
-		uc.log.Info("my events returned successfully",
-			slog.String("user_id", userID.String()),
-			slog.Int("count", len(events)),
-		)
+		return nil, fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
 	}
 	return events, nil
+}
+
+func (uc *UseCase) UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error {
+	if id == uuid.Nil {
+		return definitions.ErrInvalidUserInput
+	}
+	return uc.repo.UpdateStatus(ctx, id, status)
 }
 </file>
 
@@ -5598,22 +5715,25 @@ type UseCase struct {
 	repo          Repository
 	eventRepo     EventRepository
 	participantUC usecase.ParticipantUseCase
+	baseURL       string // читается из config.AppBaseURL
 	log           *slog.Logger
 }
 
-func New(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase) *UseCase {
+func New(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase, baseURL string) *UseCase {
 	return &UseCase{
 		repo:          repo,
 		eventRepo:     eventRepo,
 		participantUC: participantUC,
+		baseURL:       baseURL,
 	}
 }
 
-func NewWithLogger(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase, log *slog.Logger) *UseCase {
+func NewWithLogger(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase, baseURL string, log *slog.Logger) *UseCase {
 	return &UseCase{
 		repo:          repo,
 		eventRepo:     eventRepo,
 		participantUC: participantUC,
+		baseURL:       baseURL,
 		log:           log,
 	}
 }
@@ -5622,12 +5742,13 @@ func (uc *UseCase) GenerateInvite(ctx context.Context, input dto.CreateInvitatio
 	if uc.log != nil {
 		uc.log.Info("generate invitation started",
 			slog.String("event_id", input.EventID.String()),
-			slog.String("organizer_id", organizerID.String()))
+			slog.String("organizer_id", organizerID.String()),
+		)
 	}
 
 	event, err := uc.eventRepo.GetByID(ctx, input.EventID)
 	if err != nil {
-		return dto.InvitationResponse{}, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+		return dto.InvitationResponse{}, fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
 	}
 
 	if event.OrganizerID != organizerID {
@@ -5635,14 +5756,13 @@ func (uc *UseCase) GenerateInvite(ctx context.Context, input dto.CreateInvitatio
 	}
 
 	inv := entity.NewInvitation(input.EventID, organizerID, input.ExpiresIn)
-
-	// Теперь Create возвращает полную сущность из БД
 	createdInv, err := uc.repo.Create(ctx, inv)
 	if err != nil {
 		return dto.InvitationResponse{}, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
-	inviteURL := fmt.Sprintf("https://yourdomain.com/invite/%s", createdInv.Token)
+	// Используем baseURL из конфига — никакого захардкоженного домена
+	inviteURL := fmt.Sprintf("%s/invite/%s", uc.baseURL, createdInv.Token)
 
 	if uc.log != nil {
 		uc.log.Info("invitation generated", slog.String("token", createdInv.Token))
@@ -5686,9 +5806,9 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 	if uc.log != nil {
 		uc.log.Info("user joined via invitation",
 			slog.String("event_id", inv.EventID.String()),
-			slog.String("user_id", input.UserID.String()))
+			slog.String("user_id", input.UserID.String()),
+		)
 	}
-
 	return nil
 }
 </file>
@@ -5755,36 +5875,28 @@ func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role s
 	}
 
 	participant := entity.NewParticipant(eventID, userID, role)
-
-	// Теперь получаем полностью заполненный объект из БД
-	createdParticipant, err := uc.repo.Create(ctx, participant)
+	created, err := uc.repo.Create(ctx, participant)
 	if err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to create participant", slog.String("error", err.Error()))
 		}
-
 		if helpers.IsDuplicateError(err) {
 			return entity.Participant{}, definitions.ErrAlreadyParticipating
 		}
-
 		return entity.Participant{}, err
 	}
 
 	if uc.log != nil {
 		uc.log.Info("participant created successfully",
-			slog.String("participant_id", createdParticipant.ID.String()),
+			slog.String("participant_id", created.ID.String()),
 		)
 	}
-
-	return createdParticipant, nil
+	return created, nil
 }
 
 func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error) {
 	if id == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
-	}
-	if uc.log != nil {
-		uc.log.Info("get participant by id started", slog.String("participant_id", id.String()))
 	}
 	return uc.repo.GetByID(ctx, id)
 }
@@ -5793,18 +5905,28 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.
 	if eventID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
 	}
-	if uc.log != nil {
-		uc.log.Info("get participants by event started", slog.String("event_id", eventID.String()))
-	}
 	return uc.repo.GetByEvent(ctx, eventID)
 }
 
-func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID uuid.UUID) error {
-	if participantID == uuid.Nil {
+// MarkGiftSent — только сам участник может отметить отправку подарка.
+func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID, requesterID uuid.UUID) error {
+	if participantID == uuid.Nil || requesterID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
 	}
+
 	if uc.log != nil {
-		uc.log.Info("mark gift sent started", slog.String("participant_id", participantID.String()))
+		uc.log.Info("mark gift sent started",
+			slog.String("participant_id", participantID.String()),
+			slog.String("requester_id", requesterID.String()),
+		)
+	}
+
+	p, err := uc.repo.GetByID(ctx, participantID)
+	if err != nil {
+		return definitions.ErrParticipantNotFound
+	}
+	if p.UserID != requesterID {
+		return definitions.ErrForbidden
 	}
 
 	if err := uc.repo.UpdateGiftSent(ctx, participantID, true); err != nil {
@@ -5813,21 +5935,47 @@ func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID uuid.UUID) er
 		}
 		return err
 	}
+
+	if uc.log != nil {
+		uc.log.Info("gift marked as sent", slog.String("participant_id", participantID.String()))
+	}
 	return nil
 }
 
-func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
-	if id == uuid.Nil {
+// Delete — участник может удалить только себя.
+// requesterID — ID текущего пользователя из JWT.
+func (uc *UseCase) Delete(ctx context.Context, id, requesterID uuid.UUID) error {
+	if id == uuid.Nil || requesterID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
 	}
+
 	if uc.log != nil {
-		uc.log.Info("delete participant started", slog.String("participant_id", id.String()))
+		uc.log.Info("delete participant started",
+			slog.String("participant_id", id.String()),
+			slog.String("requester_id", requesterID.String()),
+		)
 	}
+
+	p, err := uc.repo.GetByID(ctx, id)
+	if err != nil {
+		return definitions.ErrParticipantNotFound
+	}
+
+	// Только сам участник может удалить себя
+	// (организатор управляет событием через другие эндпоинты)
+	if p.UserID != requesterID {
+		return definitions.ErrForbidden
+	}
+
 	if err := uc.repo.Delete(ctx, id); err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to delete participant", slog.String("error", err.Error()))
 		}
 		return err
+	}
+
+	if uc.log != nil {
+		uc.log.Info("participant deleted successfully", slog.String("participant_id", id.String()))
 	}
 	return nil
 }
@@ -5835,12 +5983,6 @@ func (uc *UseCase) Delete(ctx context.Context, id uuid.UUID) error {
 func (uc *UseCase) GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error) {
 	if userID == uuid.Nil || eventID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
-	}
-	if uc.log != nil {
-		uc.log.Info("get participant by user and event started",
-			slog.String("user_id", userID.String()),
-			slog.String("event_id", eventID.String()),
-		)
 	}
 	return uc.repo.GetByUserAndEvent(ctx, userID, eventID)
 }
@@ -6088,7 +6230,6 @@ func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibili
 	}
 
 	wishlist := entity.NewWishlist(participantID, visibility)
-
 	createdWishlist, err := uc.repo.Create(ctx, wishlist)
 	if err != nil {
 		if uc.log != nil {
@@ -6103,54 +6244,30 @@ func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibili
 	if uc.log != nil {
 		uc.log.Info("wishlist created successfully",
 			slog.String("wishlist_id", createdWishlist.ID.String()),
-			slog.String("participant_id", participantID.String()),
 		)
 	}
-
 	return createdWishlist, nil
 }
 
 func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
-	if uc.log != nil {
-		uc.log.Info("add wishlist item started",
-			slog.String("wishlist_id", wishlistID.String()),
-			slog.String("title", title),
-		)
-	}
-
 	if wishlistID == uuid.Nil {
 		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
 	}
 
 	item := entity.NewWishlistItem(wishlistID, title, link, imageURL, comment)
-
 	createdItem, err := uc.repo.CreateItem(ctx, item)
 	if err != nil {
 		if uc.log != nil {
-			uc.log.Error("failed to add wishlist item",
-				slog.String("wishlist_id", wishlistID.String()),
-				slog.String("error", err.Error()),
-			)
+			uc.log.Error("failed to add wishlist item", slog.String("error", err.Error()))
 		}
 		return entity.WishlistItem{}, fmt.Errorf("failed to add item: %w", err)
 	}
-
-	if uc.log != nil {
-		uc.log.Info("wishlist item added successfully",
-			slog.String("wishlist_id", wishlistID.String()),
-			slog.String("item_id", createdItem.ID.String()),
-		)
-	}
-
 	return createdItem, nil
 }
 
 func (uc *UseCase) GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error) {
 	if participantID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
-	}
-	if uc.log != nil {
-		uc.log.Info("get wishlist by participant started", slog.String("participant_id", participantID.String()))
 	}
 	return uc.repo.GetByParticipant(ctx, participantID)
 }
@@ -6159,12 +6276,17 @@ func (uc *UseCase) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity
 	if wishlistID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
 	}
-	if uc.log != nil {
-		uc.log.Info("get wishlist items started", slog.String("wishlist_id", wishlistID.String()))
-	}
 	return uc.repo.GetItems(ctx, wishlistID)
 }
 
+// GetForUser — получить вишлист с учётом visibility.
+//
+// Логика доступа:
+//   - "public"     → виден всем авторизованным
+//   - "friends"    → TODO: когда появится домен друзей; пока как "santa_only"
+//   - "santa_only" → только Санта этого участника
+//
+// Владелец вишлиста всегда видит свой собственный.
 func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error) {
 	if eventID == uuid.Nil || participantID == uuid.Nil || requesterID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -6180,76 +6302,64 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 
 	wishlist, err := uc.repo.GetByParticipant(ctx, participantID)
 	if err != nil {
-		if uc.log != nil {
-			uc.log.Error("failed to get wishlist by participant",
-				slog.String("participant_id", participantID.String()),
-				slog.String("error", err.Error()),
-			)
-		}
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%w: %w", definitions.ErrWishlistNotFound, err)
+			return nil, definitions.ErrWishlistNotFound
 		}
 		return nil, fmt.Errorf("wishlist not found: %w", err)
 	}
 
 	participant, err := uc.participantRepo.GetByID(ctx, participantID)
 	if err != nil {
-		if uc.log != nil {
-			uc.log.Error("failed to get participant by id",
-				slog.String("participant_id", participantID.String()),
-				slog.String("error", err.Error()),
-			)
-		}
 		return nil, fmt.Errorf("failed to get participant: %w", err)
 	}
 
-	assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
-	if err != nil {
-		if uc.log != nil {
-			uc.log.Error("failed to get assignments",
-				slog.String("event_id", eventID.String()),
-				slog.String("error", err.Error()),
-			)
-		}
-		return nil, fmt.Errorf("failed to check assignment: %w", err)
+	// Владелец всегда видит свой вишлист
+	if participant.UserID == requesterID {
+		return wishlist, nil
 	}
 
-	isSanta := false
-	for _, a := range assignments {
-		if a.GiverID == requesterID && a.ReceiverID == participant.UserID {
-			isSanta = true
-			break
-		}
-	}
+	switch wishlist.Visibility {
+	case definitions.WishlistVisibilityPublic:
+		// Виден всем
+		return wishlist, nil
 
-	if !isSanta {
+	case definitions.WishlistVisibilityFriends:
+		// TODO: когда появится домен друзей — проверять дружбу.
+		// Пока трактуем как santa_only (самый безопасный fallback).
+		fallthrough
+
+	case definitions.WishlistVisibilitySantaOnly:
+		// Только Санта этого участника
+		assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check assignment: %w", err)
+		}
+
+		for _, a := range assignments {
+			if a.GiverID == requesterID && a.ReceiverID == participant.UserID {
+				if uc.log != nil {
+					uc.log.Info("wishlist access granted to santa",
+						slog.String("requester_id", requesterID.String()),
+					)
+				}
+				return wishlist, nil
+			}
+		}
+
 		if uc.log != nil {
-			uc.log.Warn("wishlist access denied: not the santa",
+			uc.log.Warn("wishlist access denied",
 				slog.String("requester_id", requesterID.String()),
-				slog.String("receiver_user_id", participant.UserID.String()),
+				slog.String("visibility", wishlist.Visibility),
 			)
 		}
-		return nil, definitions.ErrNotSanta
-	}
+		return nil, definitions.ErrWishlistVisibilityForbidden
 
-	if uc.log != nil {
-		uc.log.Info("wishlist access granted to santa",
-			slog.String("requester_id", requesterID.String()),
-			slog.String("receiver_user_id", participant.UserID.String()),
-		)
+	default:
+		return nil, definitions.ErrInvalidWishlistVisibility
 	}
-
-	return wishlist, nil
 }
 
 func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
-	if uc.log != nil {
-		uc.log.Info("update wishlist item started",
-			slog.String("item_id", itemID.String()),
-			slog.String("title", title),
-		)
-	}
-
 	if itemID == uuid.Nil {
 		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
 	}
@@ -6261,37 +6371,19 @@ func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title strin
 		return entity.WishlistItem{}, fmt.Errorf("failed to update item: %w", err)
 	}
 
-	// Получаем актуальный item после обновления
 	itemPtr, err := uc.repo.GetItemByID(ctx, itemID)
 	if err != nil {
 		return entity.WishlistItem{}, fmt.Errorf("failed to get updated item: %w", err)
 	}
-
-	if uc.log != nil {
-		uc.log.Info("wishlist item updated successfully", slog.String("item_id", itemID.String()))
-	}
-
-	return *itemPtr, nil // ← исправление здесь
+	return *itemPtr, nil
 }
 
 func (uc *UseCase) DeleteItem(ctx context.Context, itemID uuid.UUID) error {
-	if uc.log != nil {
-		uc.log.Info("delete wishlist item started", slog.String("item_id", itemID.String()))
-	}
-
 	if itemID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
 	}
-
 	if err := uc.repo.DeleteItem(ctx, itemID); err != nil {
-		if uc.log != nil {
-			uc.log.Error("failed to delete wishlist item", slog.String("error", err.Error()))
-		}
 		return fmt.Errorf("failed to delete item: %w", err)
-	}
-
-	if uc.log != nil {
-		uc.log.Info("wishlist item deleted successfully", slog.String("item_id", itemID.String()))
 	}
 	return nil
 }
@@ -6300,11 +6392,6 @@ func (uc *UseCase) GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.W
 	if itemID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
 	}
-
-	if uc.log != nil {
-		uc.log.Info("get wishlist item by id started", slog.String("item_id", itemID.String()))
-	}
-
 	return uc.repo.GetItemByID(ctx, itemID)
 }
 
@@ -6312,11 +6399,6 @@ func (uc *UseCase) GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.W
 	if wishlistID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
 	}
-
-	if uc.log != nil {
-		uc.log.Info("get wishlist by id started", slog.String("wishlist_id", wishlistID.String()))
-	}
-
 	return uc.repo.GetByID(ctx, wishlistID)
 }
 </file>
@@ -6331,7 +6413,6 @@ import (
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
-	"secret-santa-backend/internal/oauth"
 
 	"github.com/google/uuid"
 )
@@ -6350,16 +6431,15 @@ type EventUseCase interface {
 	Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
 	GetAll(ctx context.Context) ([]entity.Event, error)
-	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
+	// Update и Delete принимают userID — проверка что вызывает организатор
+	Update(ctx context.Context, id, userID uuid.UUID, input dto.UpdateEventInput) error
+	Delete(ctx context.Context, id, userID uuid.UUID) error
 	UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error
-	Delete(ctx context.Context, id uuid.UUID) error
-
 	OpenInvitation(ctx context.Context, id, userID uuid.UUID) error
 	CloseRegistration(ctx context.Context, id, userID uuid.UUID) error
 	StartDrawing(ctx context.Context, id, userID uuid.UUID) error
 	Finish(ctx context.Context, id, userID uuid.UUID) error
 	Cancel(ctx context.Context, id, userID uuid.UUID) error
-
 	GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
 }
 
@@ -6367,8 +6447,10 @@ type ParticipantUseCase interface {
 	Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
-	MarkGiftSent(ctx context.Context, participantID uuid.UUID) error
-	Delete(ctx context.Context, id uuid.UUID) error
+	// MarkGiftSent принимает requesterID — проверка что вызывает владелец
+	MarkGiftSent(ctx context.Context, participantID, requesterID uuid.UUID) error
+	// Delete принимает requesterID — проверка прав
+	Delete(ctx context.Context, id, requesterID uuid.UUID) error
 	GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error)
 }
 
@@ -6389,19 +6471,9 @@ type AssignmentUseCase interface {
 	GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error)
 }
 
-type ParticipantRepository interface {
-	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
-}
-
 type InvitationUseCase interface {
 	GenerateInvite(ctx context.Context, input dto.CreateInvitationInput, organizerID uuid.UUID) (dto.InvitationResponse, error)
 	JoinByInvite(ctx context.Context, input dto.JoinByInvitationInput) error
-}
-
-type ChatRepository interface {
-	// CreateMessage теперь возвращает полностью заполненную сущность из БД
-	CreateMessage(ctx context.Context, msg entity.Message) (entity.Message, error)
-	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
 }
 
 type ChatUseCase interface {
@@ -6410,39 +6482,39 @@ type ChatUseCase interface {
 	SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error)
 }
 
-// AssignmentRepository — полный интерфейс (используется в chat и wishlist)
+// --- Репозиторные интерфейсы ---
+
+type ParticipantRepository interface {
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
+}
+
 type AssignmentRepository interface {
 	Create(ctx context.Context, assignment entity.Assignment) (entity.Assignment, error)
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
 	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
-
 	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
 }
+
+type ChatRepository interface {
+	CreateMessage(ctx context.Context, msg entity.Message) (entity.Message, error)
+	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
+}
+
 type EmailService interface {
 	SendLoginNotification(ctx context.Context, email, name string) error
 	SendOTP(ctx context.Context, email string) (string, error)
 	SendDrawNotification(ctx context.Context, email, eventTitle string) error
 }
 
-// === НОВОЕ: Репозиторий для OTP-кодов ===
 type VerificationRepository interface {
 	SaveCode(ctx context.Context, email, code string, expiresAt time.Time) error
 	GetValidCode(ctx context.Context, email, code string) (bool, error)
 	MarkAsUsed(ctx context.Context, email, code string) error
 }
-
-// AuthUseCase (обновлённый)
-type AuthUseCase interface {
-	LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error)
-	SendOTP(ctx context.Context, email string) error
-	VerifyOTP(ctx context.Context, email, code string) (string, error)
-}
 </file>
 
 <file path="migrations/000001_test_migration.down.sql">
--- +goose Down
--- +goose StatementBegin
-
+DROP TABLE IF EXISTS email_verification_codes;
 DROP TABLE IF EXISTS messages;
 DROP TABLE IF EXISTS invitations;
 DROP TABLE IF EXISTS wishlist_items;
@@ -6451,210 +6523,136 @@ DROP TABLE IF EXISTS assignments;
 DROP TABLE IF EXISTS participants;
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS email_verification_codes;
--- +goose StatementEnd
 </file>
 
 <file path="migrations/000001_test_migration.up.sql">
--- +goose Up
--- +goose StatementBegin
-
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- USERS
+-- Пользователи системы
 CREATE TABLE IF NOT EXISTS users (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name            TEXT NOT NULL,
-    email           TEXT UNIQUE NOT NULL,
-    oauth_id        TEXT UNIQUE NOT NULL,
-    oauth_provider  TEXT NOT NULL,
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name           VARCHAR(255)  NOT NULL,
+    email          VARCHAR(255)  NOT NULL UNIQUE,
+    oauth_id       VARCHAR(255)  NOT NULL,
+    oauth_provider VARCHAR(50)   NOT NULL,
+    created_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE users IS 'Пользователи системы';
-COMMENT ON COLUMN users.id IS 'Уникальный идентификатор пользователя';
-COMMENT ON COLUMN users.name IS 'Отображаемое имя пользователя';
-COMMENT ON COLUMN users.email IS 'Email пользователя';
-COMMENT ON COLUMN users.oauth_id IS 'Идентификатор пользователя у провайдера OAuth';
-COMMENT ON COLUMN users.oauth_provider IS 'Название провайдера (github, vk, google и т.д.)';
-COMMENT ON COLUMN users.created_at IS 'Дата создания записи';
-COMMENT ON COLUMN users.updated_at IS 'Дата последнего обновления записи';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oauth ON users (oauth_id, oauth_provider);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 
--- EVENTS 
+-- События Тайный Санта
 CREATE TABLE IF NOT EXISTS events (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title               TEXT NOT NULL,
-    description         TEXT,
-    rules               TEXT,
-    recommendations     TEXT,
-    organizer_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    start_date          TIMESTAMPTZ NOT NULL,
-    draw_date           TIMESTAMPTZ,
-    end_date            TIMESTAMPTZ NOT NULL,
-    status              TEXT NOT NULL DEFAULT 'draft',
-    max_participants    INT NOT NULL DEFAULT 0,
-    created_at          TIMESTAMPTZ DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ DEFAULT NOW()
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title            VARCHAR(255) NOT NULL,
+    description      TEXT,
+    rules            TEXT,
+    recommendations  TEXT,
+    organizer_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    start_date       TIMESTAMPTZ  NOT NULL,
+    draw_date        TIMESTAMPTZ,
+    end_date         TIMESTAMPTZ  NOT NULL,
+    status           VARCHAR(50)  NOT NULL DEFAULT 'draft',
+    max_participants INT          NOT NULL DEFAULT 2,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE events IS 'События "Тайный Санта"';
-COMMENT ON COLUMN events.id IS 'Уникальный идентификатор события';
-COMMENT ON COLUMN events.title IS 'Название события';
-COMMENT ON COLUMN events.description IS 'Описание события';
-COMMENT ON COLUMN events.rules IS 'Правила события';
-COMMENT ON COLUMN events.recommendations IS 'Рекомендации и пожелания по подаркам';
-COMMENT ON COLUMN events.organizer_id IS 'ID организатора события';
-COMMENT ON COLUMN events.start_date IS 'Дата начала события';
-COMMENT ON COLUMN events.draw_date IS 'Дата проведения жеребьёвки';
-COMMENT ON COLUMN events.end_date IS 'Дата окончания события';
-COMMENT ON COLUMN events.status IS 'Текущий статус события (draft, invitation_open и т.д.)';
-COMMENT ON COLUMN events.max_participants IS 'Максимальное количество участников';
-COMMENT ON COLUMN events.created_at IS 'Дата создания события';
-COMMENT ON COLUMN events.updated_at IS 'Дата последнего обновления события';
+CREATE INDEX IF NOT EXISTS idx_events_organizer_id ON events (organizer_id);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events (status);
 
--- PARTICIPANTS
+-- Участники события
 CREATE TABLE IF NOT EXISTS participants (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id      UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role          TEXT NOT NULL DEFAULT 'participant',
-    gift_sent     BOOLEAN NOT NULL DEFAULT false,
-    gift_sent_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ DEFAULT NOW(),
+    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id     UUID        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id      UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role         VARCHAR(50) NOT NULL DEFAULT 'participant',
+    gift_sent    BOOLEAN     NOT NULL DEFAULT false,
+    gift_sent_at TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (event_id, user_id)
 );
 
-COMMENT ON TABLE participants IS 'Участники событий';
-COMMENT ON COLUMN participants.id IS 'Уникальный идентификатор участника';
-COMMENT ON COLUMN participants.event_id IS 'Ссылка на событие';
-COMMENT ON COLUMN participants.user_id IS 'Ссылка на пользователя';
-COMMENT ON COLUMN participants.role IS 'Роль участника (organizer или participant)';
-COMMENT ON COLUMN participants.gift_sent IS 'Подарок уже отправлен?';
-COMMENT ON COLUMN participants.gift_sent_at IS 'Когда отметили отправку подарка';
-COMMENT ON COLUMN participants.created_at IS 'Дата добавления участника';
-COMMENT ON COLUMN participants.updated_at IS 'Дата последнего обновления участника';
+CREATE INDEX IF NOT EXISTS idx_participants_event_id ON participants (event_id);
+CREATE INDEX IF NOT EXISTS idx_participants_user_id ON participants (user_id);
 
--- ASSIGNMENTS 
+-- Назначения жеребьёвки
 CREATE TABLE IF NOT EXISTS assignments (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id     UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    giver_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    receiver_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at   TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (event_id, giver_id)
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id    UUID        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    giver_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (event_id, giver_id),
+    CONSTRAINT no_self_assignment CHECK (giver_id != receiver_id)
 );
 
-COMMENT ON TABLE assignments IS 'Результат жеребьёвки (кто кому дарит)';
-COMMENT ON COLUMN assignments.id IS 'Уникальный ID назначения';
-COMMENT ON COLUMN assignments.event_id IS 'Событие';
-COMMENT ON COLUMN assignments.giver_id IS 'Кто дарит (Санта)';
-COMMENT ON COLUMN assignments.receiver_id IS 'Кому дарит';
-COMMENT ON COLUMN assignments.created_at IS 'Дата создания назначения';
+CREATE INDEX IF NOT EXISTS idx_assignments_event_id ON assignments (event_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_giver_id ON assignments (giver_id);
 
--- WISHLISTS 
+-- Вишлисты
 CREATE TABLE IF NOT EXISTS wishlists (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    participant_id  UUID NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-    visibility      TEXT NOT NULL DEFAULT 'santa_only',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
+    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    participant_id UUID        NOT NULL REFERENCES participants(id) ON DELETE CASCADE UNIQUE,
+    visibility     VARCHAR(50) NOT NULL DEFAULT 'santa_only',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE wishlists IS 'Вишлисты участников';
-COMMENT ON COLUMN wishlists.id IS 'Уникальный идентификатор вишлиста';
-COMMENT ON COLUMN wishlists.participant_id IS 'Участник, которому принадлежит вишлист';
-COMMENT ON COLUMN wishlists.visibility IS 'Видимость (public, friends, santa_only)';
-COMMENT ON COLUMN wishlists.created_at IS 'Дата создания вишлиста';
-COMMENT ON COLUMN wishlists.updated_at IS 'Дата последнего обновления вишлиста';
+CREATE INDEX IF NOT EXISTS idx_wishlists_participant_id ON wishlists (participant_id);
 
--- WISHLIST ITEMS 
+-- Элементы вишлиста
 CREATE TABLE IF NOT EXISTS wishlist_items (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    wishlist_id  UUID NOT NULL REFERENCES wishlists(id) ON DELETE CASCADE,
-    title        TEXT NOT NULL,
-    link         TEXT,
-    image_url    TEXT,
-    comment      TEXT,
-    created_at   TIMESTAMPTZ DEFAULT NOW()
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    wishlist_id UUID         NOT NULL REFERENCES wishlists(id) ON DELETE CASCADE,
+    title       VARCHAR(500) NOT NULL,
+    link        TEXT,
+    image_url   TEXT,
+    comment     TEXT,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE wishlist_items IS 'Элементы вишлиста';
-COMMENT ON COLUMN wishlist_items.id IS 'Уникальный идентификатор элемента';
-COMMENT ON COLUMN wishlist_items.wishlist_id IS 'Ссылка на вишлист';
-COMMENT ON COLUMN wishlist_items.title IS 'Название желаемого подарка';
-COMMENT ON COLUMN wishlist_items.link IS 'Ссылка на подарок';
-COMMENT ON COLUMN wishlist_items.image_url IS 'Ссылка на изображение подарка';
-COMMENT ON COLUMN wishlist_items.comment IS 'Комментарий пользователя';
-COMMENT ON COLUMN wishlist_items.created_at IS 'Дата добавления товара';
+CREATE INDEX IF NOT EXISTS idx_wishlist_items_wishlist_id ON wishlist_items (wishlist_id);
 
--- INVITATIONS 
+-- Приглашения
 CREATE TABLE IF NOT EXISTS invitations (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    token       TEXT UNIQUE NOT NULL,
-    expires_at  TIMESTAMPTZ NOT NULL,
-    created_by  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at  TIMESTAMPTZ DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ DEFAULT NOW()
+    id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id   UUID         NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    token      VARCHAR(255) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ  NOT NULL,
+    created_by UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE invitations IS 'Приглашения по ссылке (многоразовые)';
-COMMENT ON COLUMN invitations.id IS 'Уникальный идентификатор приглашения';
-COMMENT ON COLUMN invitations.event_id IS 'Событие';
-COMMENT ON COLUMN invitations.token IS 'Уникальный токен для ссылки';
-COMMENT ON COLUMN invitations.expires_at IS 'Срок действия приглашения';
-COMMENT ON COLUMN invitations.created_by IS 'Организатор, который создал приглашение';
-COMMENT ON COLUMN invitations.created_at IS 'Дата создания';
-COMMENT ON COLUMN invitations.updated_at IS 'Дата последнего обновления';
+CREATE INDEX IF NOT EXISTS idx_invitations_event_id ON invitations (event_id);
+CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations (token);
 
--- MESSAGES 
+-- Сообщения анонимного чата
 CREATE TABLE IF NOT EXISTS messages (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    sender_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    receiver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    content     TEXT NOT NULL,
-    created_at  TIMESTAMPTZ DEFAULT NOW()
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id    UUID        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    sender_id   UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content     TEXT        NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE messages IS 'Сообщения в чате между Сантой и получателем';
-COMMENT ON COLUMN messages.id IS 'Уникальный ID сообщения';
-COMMENT ON COLUMN messages.event_id IS 'Событие';
-COMMENT ON COLUMN messages.sender_id IS 'Отправитель';
-COMMENT ON COLUMN messages.receiver_id IS 'Получатель';
-COMMENT ON COLUMN messages.content IS 'Текст сообщения';
-COMMENT ON COLUMN messages.created_at IS 'Дата отправки';
+CREATE INDEX IF NOT EXISTS idx_messages_event_id ON messages (event_id);
+CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages (event_id, sender_id, receiver_id);
 
+-- OTP-коды для входа по email
 CREATE TABLE IF NOT EXISTS email_verification_codes (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email         TEXT NOT NULL,
-    code          TEXT NOT NULL,           -- 6-значный код
-    expires_at    TIMESTAMPTZ NOT NULL,
-    used          BOOLEAN NOT NULL DEFAULT false,
-    purpose       TEXT NOT NULL DEFAULT 'login_otp', -- login_otp | login_notification | draw_notification
-    created_at    TIMESTAMPTZ DEFAULT NOW()
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    email      VARCHAR(255) NOT NULL,
+    code       VARCHAR(10)  NOT NULL,
+    expires_at TIMESTAMPTZ  NOT NULL,
+    used       BOOLEAN      NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE email_verification_codes IS 'Коды подтверждения и уведомления по email';
-COMMENT ON COLUMN email_verification_codes.email IS 'Email получателя';
-COMMENT ON COLUMN email_verification_codes.code IS '6-значный код';
-COMMENT ON COLUMN email_verification_codes.purpose IS 'Для чего код (логин, уведомление о входе, жеребьёвка)';
-
--- Индексы
-CREATE INDEX idx_email_codes_email ON email_verification_codes(email);
-CREATE INDEX idx_email_codes_expires ON email_verification_codes(expires_at);
-CREATE INDEX idx_email_codes_purpose ON email_verification_codes(purpose);
-CREATE INDEX idx_users_oauth ON users(oauth_id, oauth_provider);
-CREATE INDEX idx_events_organizer ON events(organizer_id);
-CREATE INDEX idx_events_status ON events(status);
-CREATE INDEX idx_participants_event ON participants(event_id);
-CREATE INDEX idx_assignments_event ON assignments(event_id);
-CREATE INDEX idx_wishlists_participant ON wishlists(participant_id);
-CREATE INDEX idx_messages_event_pair ON messages(event_id, sender_id, receiver_id);
-
--- +goose StatementEnd
+CREATE INDEX IF NOT EXISTS idx_verification_email ON email_verification_codes (email);
+CREATE INDEX IF NOT EXISTS idx_verification_lookup ON email_verification_codes (email, code, used, expires_at);
 </file>
 
 <file path=".env.example">

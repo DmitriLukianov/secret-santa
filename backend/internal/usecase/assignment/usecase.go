@@ -2,9 +2,10 @@ package assignment
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	"math/big"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
@@ -66,7 +67,7 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		if uc.log != nil {
 			uc.log.Error("failed to get event", slog.String("error", err.Error()))
 		}
-		return fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+		return fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
 	}
 
 	if eventPtr.OrganizerID != userID {
@@ -100,29 +101,28 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
 
-	// === УВЕДОМЛЕНИЯ ПРИ ЖЕРЕБЬЁВКЕ ===
+	// Уведомления — не блокируют основной флоу, ошибки только логируются
 	if uc.emailService != nil && uc.userUC != nil {
 		notified := 0
 		for _, p := range participants {
 			userPtr, err := uc.userUC.GetByID(ctx, p.UserID)
 			if err != nil || userPtr == nil {
 				if uc.log != nil {
-					uc.log.Warn("failed to resolve participant email for draw notification",
-						slog.String("event_id", eventID.String()),
+					uc.log.Warn("failed to resolve participant for draw notification",
 						slog.String("user_id", p.UserID.String()),
 						slog.String("error", fmt.Sprint(err)),
 					)
 				}
 				continue
 			}
-
-			if err := uc.emailService.SendDrawNotification(ctx, userPtr.Email, eventPtr.Title); err != nil && uc.log != nil {
-				uc.log.Warn("failed to send draw notification",
-					slog.String("event_id", eventID.String()),
-					slog.String("user_id", userPtr.ID.String()),
-					slog.String("email", userPtr.Email),
-					slog.String("error", err.Error()),
-				)
+			if err := uc.emailService.SendDrawNotification(ctx, userPtr.Email, eventPtr.Title); err != nil {
+				if uc.log != nil {
+					uc.log.Warn("failed to send draw notification",
+						slog.String("user_id", userPtr.ID.String()),
+						slog.String("email", userPtr.Email),
+						slog.String("error", err.Error()),
+					)
+				}
 				continue
 			}
 			notified++
@@ -136,13 +136,13 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		uc.log.Info("draw completed successfully",
 			slog.String("event_id", eventID.String()),
 			slog.Int("assignments_created", len(assignments)),
-			slog.Int("participants_notified", len(participants)),
 		)
 	}
-
 	return nil
 }
 
+// createDerangement — создаёт перестановку без неподвижных точек (никто не дарит сам себе).
+// Использует crypto/rand для криптографически стойкого перемешивания.
 func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Participant) ([]entity.Assignment, error) {
 	n := len(participants)
 	ids := make([]uuid.UUID, n)
@@ -150,13 +150,17 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		ids[i] = p.UserID
 	}
 
-	maxAttempts := 200
-
+	const maxAttempts = 200
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shuffled := make([]uuid.UUID, n)
 		copy(shuffled, ids)
-		rand.Shuffle(n, func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
 
+		// Fisher-Yates shuffle с crypto/rand
+		if err := cryptoShuffle(shuffled); err != nil {
+			return nil, fmt.Errorf("failed to shuffle: %w", err)
+		}
+
+		// Проверяем что нет самоназначений
 		valid := true
 		for i := 0; i < n; i++ {
 			if shuffled[i] == ids[i] {
@@ -164,6 +168,7 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 				break
 			}
 		}
+
 		if valid {
 			assignments := make([]entity.Assignment, n)
 			for i := 0; i < n; i++ {
@@ -176,6 +181,22 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 	return nil, fmt.Errorf("failed to generate valid derangement after %d attempts", maxAttempts)
 }
 
+// cryptoShuffle — Fisher-Yates с crypto/rand вместо math/rand
+func cryptoShuffle(s []uuid.UUID) error {
+	n := len(s)
+	for i := n - 1; i > 0; i-- {
+		jBig, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return err
+		}
+		j := int(jBig.Int64())
+		s[i], s[j] = s[j], s[i]
+	}
+	return nil
+}
+
+// GetByEvent возвращает назначение текущего пользователя (только своё).
+// Участник видит только кому он дарит — не весь список.
 func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {
 	if eventID == uuid.Nil || userID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -186,6 +207,7 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([
 		return nil, fmt.Errorf("failed to get assignments: %w", err)
 	}
 
+	// Каждый участник видит только своё назначение
 	for _, a := range assignments {
 		if a.GiverID == userID {
 			return []entity.Assignment{a}, nil

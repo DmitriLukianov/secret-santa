@@ -17,22 +17,25 @@ type UseCase struct {
 	repo          Repository
 	eventRepo     EventRepository
 	participantUC usecase.ParticipantUseCase
+	baseURL       string // читается из config.AppBaseURL
 	log           *slog.Logger
 }
 
-func New(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase) *UseCase {
+func New(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase, baseURL string) *UseCase {
 	return &UseCase{
 		repo:          repo,
 		eventRepo:     eventRepo,
 		participantUC: participantUC,
+		baseURL:       baseURL,
 	}
 }
 
-func NewWithLogger(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase, log *slog.Logger) *UseCase {
+func NewWithLogger(repo Repository, eventRepo EventRepository, participantUC usecase.ParticipantUseCase, baseURL string, log *slog.Logger) *UseCase {
 	return &UseCase{
 		repo:          repo,
 		eventRepo:     eventRepo,
 		participantUC: participantUC,
+		baseURL:       baseURL,
 		log:           log,
 	}
 }
@@ -41,12 +44,13 @@ func (uc *UseCase) GenerateInvite(ctx context.Context, input dto.CreateInvitatio
 	if uc.log != nil {
 		uc.log.Info("generate invitation started",
 			slog.String("event_id", input.EventID.String()),
-			slog.String("organizer_id", organizerID.String()))
+			slog.String("organizer_id", organizerID.String()),
+		)
 	}
 
 	event, err := uc.eventRepo.GetByID(ctx, input.EventID)
 	if err != nil {
-		return dto.InvitationResponse{}, fmt.Errorf("%w: %w", definitions.ErrEventNotFound, err)
+		return dto.InvitationResponse{}, fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
 	}
 
 	if event.OrganizerID != organizerID {
@@ -54,14 +58,13 @@ func (uc *UseCase) GenerateInvite(ctx context.Context, input dto.CreateInvitatio
 	}
 
 	inv := entity.NewInvitation(input.EventID, organizerID, input.ExpiresIn)
-
-	// Теперь Create возвращает полную сущность из БД
 	createdInv, err := uc.repo.Create(ctx, inv)
 	if err != nil {
 		return dto.InvitationResponse{}, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
-	inviteURL := fmt.Sprintf("https://yourdomain.com/invite/%s", createdInv.Token)
+	// Используем baseURL из конфига — никакого захардкоженного домена
+	inviteURL := fmt.Sprintf("%s/invite/%s", uc.baseURL, createdInv.Token)
 
 	if uc.log != nil {
 		uc.log.Info("invitation generated", slog.String("token", createdInv.Token))
@@ -105,8 +108,8 @@ func (uc *UseCase) JoinByInvite(ctx context.Context, input dto.JoinByInvitationI
 	if uc.log != nil {
 		uc.log.Info("user joined via invitation",
 			slog.String("event_id", inv.EventID.String()),
-			slog.String("user_id", input.UserID.String()))
+			slog.String("user_id", input.UserID.String()),
+		)
 	}
-
 	return nil
 }

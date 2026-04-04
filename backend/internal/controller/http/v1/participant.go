@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/helpers"
 	"secret-santa-backend/internal/usecase"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 type ParticipantHandler struct {
@@ -35,7 +35,6 @@ func (h *ParticipantHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Теперь Create возвращает полностью заполненный объект из БД
 	participant, err := h.uc.Create(r.Context(), eventID, userID, definitions.ParticipantRoleParticipant)
 	if err != nil {
 		response.WriteHTTPError(w, err)
@@ -65,6 +64,7 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response.ParticipantsToResponse(participants))
 }
 
+// MarkGiftSent — только сам участник может это сделать (проверка в usecase).
 func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -73,14 +73,23 @@ func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.uc.MarkGiftSent(r.Context(), id); err != nil {
+	requesterID, err := helpers.GetUserID(r)
+	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
 
+	if err := h.uc.MarkGiftSent(r.Context(), id, requesterID); err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Подарок отмечен как отправленный"})
 }
 
+// Delete — только сам участник может удалить себя (проверка в usecase).
 func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -89,7 +98,13 @@ func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.uc.Delete(r.Context(), id); err != nil {
+	requesterID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	if err := h.uc.Delete(r.Context(), id, requesterID); err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}

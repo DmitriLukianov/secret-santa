@@ -1,199 +1,127 @@
--- +goose Up
--- +goose StatementBegin
-
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- USERS
+-- Пользователи системы
 CREATE TABLE IF NOT EXISTS users (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name            TEXT NOT NULL,
-    email           TEXT UNIQUE NOT NULL,
-    oauth_id        TEXT UNIQUE NOT NULL,
-    oauth_provider  TEXT NOT NULL,
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name           VARCHAR(255)  NOT NULL,
+    email          VARCHAR(255)  NOT NULL UNIQUE,
+    oauth_id       VARCHAR(255)  NOT NULL,
+    oauth_provider VARCHAR(50)   NOT NULL,
+    created_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE users IS 'Пользователи системы';
-COMMENT ON COLUMN users.id IS 'Уникальный идентификатор пользователя';
-COMMENT ON COLUMN users.name IS 'Отображаемое имя пользователя';
-COMMENT ON COLUMN users.email IS 'Email пользователя';
-COMMENT ON COLUMN users.oauth_id IS 'Идентификатор пользователя у провайдера OAuth';
-COMMENT ON COLUMN users.oauth_provider IS 'Название провайдера (github, vk, google и т.д.)';
-COMMENT ON COLUMN users.created_at IS 'Дата создания записи';
-COMMENT ON COLUMN users.updated_at IS 'Дата последнего обновления записи';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oauth ON users (oauth_id, oauth_provider);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 
--- EVENTS 
+-- События Тайный Санта
 CREATE TABLE IF NOT EXISTS events (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title               TEXT NOT NULL,
-    description         TEXT,
-    rules               TEXT,
-    recommendations     TEXT,
-    organizer_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    start_date          TIMESTAMPTZ NOT NULL,
-    draw_date           TIMESTAMPTZ,
-    end_date            TIMESTAMPTZ NOT NULL,
-    status              TEXT NOT NULL DEFAULT 'draft',
-    max_participants    INT NOT NULL DEFAULT 0,
-    created_at          TIMESTAMPTZ DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ DEFAULT NOW()
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title            VARCHAR(255) NOT NULL,
+    description      TEXT,
+    rules            TEXT,
+    recommendations  TEXT,
+    organizer_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    start_date       TIMESTAMPTZ  NOT NULL,
+    draw_date        TIMESTAMPTZ,
+    end_date         TIMESTAMPTZ  NOT NULL,
+    status           VARCHAR(50)  NOT NULL DEFAULT 'draft',
+    max_participants INT          NOT NULL DEFAULT 2,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE events IS 'События "Тайный Санта"';
-COMMENT ON COLUMN events.id IS 'Уникальный идентификатор события';
-COMMENT ON COLUMN events.title IS 'Название события';
-COMMENT ON COLUMN events.description IS 'Описание события';
-COMMENT ON COLUMN events.rules IS 'Правила события';
-COMMENT ON COLUMN events.recommendations IS 'Рекомендации и пожелания по подаркам';
-COMMENT ON COLUMN events.organizer_id IS 'ID организатора события';
-COMMENT ON COLUMN events.start_date IS 'Дата начала события';
-COMMENT ON COLUMN events.draw_date IS 'Дата проведения жеребьёвки';
-COMMENT ON COLUMN events.end_date IS 'Дата окончания события';
-COMMENT ON COLUMN events.status IS 'Текущий статус события (draft, invitation_open и т.д.)';
-COMMENT ON COLUMN events.max_participants IS 'Максимальное количество участников';
-COMMENT ON COLUMN events.created_at IS 'Дата создания события';
-COMMENT ON COLUMN events.updated_at IS 'Дата последнего обновления события';
+CREATE INDEX IF NOT EXISTS idx_events_organizer_id ON events (organizer_id);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events (status);
 
--- PARTICIPANTS
+-- Участники события
 CREATE TABLE IF NOT EXISTS participants (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id      UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role          TEXT NOT NULL DEFAULT 'participant',
-    gift_sent     BOOLEAN NOT NULL DEFAULT false,
-    gift_sent_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ DEFAULT NOW(),
+    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id     UUID        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id      UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role         VARCHAR(50) NOT NULL DEFAULT 'participant',
+    gift_sent    BOOLEAN     NOT NULL DEFAULT false,
+    gift_sent_at TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (event_id, user_id)
 );
 
-COMMENT ON TABLE participants IS 'Участники событий';
-COMMENT ON COLUMN participants.id IS 'Уникальный идентификатор участника';
-COMMENT ON COLUMN participants.event_id IS 'Ссылка на событие';
-COMMENT ON COLUMN participants.user_id IS 'Ссылка на пользователя';
-COMMENT ON COLUMN participants.role IS 'Роль участника (organizer или participant)';
-COMMENT ON COLUMN participants.gift_sent IS 'Подарок уже отправлен?';
-COMMENT ON COLUMN participants.gift_sent_at IS 'Когда отметили отправку подарка';
-COMMENT ON COLUMN participants.created_at IS 'Дата добавления участника';
-COMMENT ON COLUMN participants.updated_at IS 'Дата последнего обновления участника';
+CREATE INDEX IF NOT EXISTS idx_participants_event_id ON participants (event_id);
+CREATE INDEX IF NOT EXISTS idx_participants_user_id ON participants (user_id);
 
--- ASSIGNMENTS 
+-- Назначения жеребьёвки
 CREATE TABLE IF NOT EXISTS assignments (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id     UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    giver_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    receiver_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at   TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (event_id, giver_id)
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id    UUID        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    giver_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (event_id, giver_id),
+    CONSTRAINT no_self_assignment CHECK (giver_id != receiver_id)
 );
 
-COMMENT ON TABLE assignments IS 'Результат жеребьёвки (кто кому дарит)';
-COMMENT ON COLUMN assignments.id IS 'Уникальный ID назначения';
-COMMENT ON COLUMN assignments.event_id IS 'Событие';
-COMMENT ON COLUMN assignments.giver_id IS 'Кто дарит (Санта)';
-COMMENT ON COLUMN assignments.receiver_id IS 'Кому дарит';
-COMMENT ON COLUMN assignments.created_at IS 'Дата создания назначения';
+CREATE INDEX IF NOT EXISTS idx_assignments_event_id ON assignments (event_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_giver_id ON assignments (giver_id);
 
--- WISHLISTS 
+-- Вишлисты
 CREATE TABLE IF NOT EXISTS wishlists (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    participant_id  UUID NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-    visibility      TEXT NOT NULL DEFAULT 'santa_only',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
+    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    participant_id UUID        NOT NULL REFERENCES participants(id) ON DELETE CASCADE UNIQUE,
+    visibility     VARCHAR(50) NOT NULL DEFAULT 'santa_only',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE wishlists IS 'Вишлисты участников';
-COMMENT ON COLUMN wishlists.id IS 'Уникальный идентификатор вишлиста';
-COMMENT ON COLUMN wishlists.participant_id IS 'Участник, которому принадлежит вишлист';
-COMMENT ON COLUMN wishlists.visibility IS 'Видимость (public, friends, santa_only)';
-COMMENT ON COLUMN wishlists.created_at IS 'Дата создания вишлиста';
-COMMENT ON COLUMN wishlists.updated_at IS 'Дата последнего обновления вишлиста';
+CREATE INDEX IF NOT EXISTS idx_wishlists_participant_id ON wishlists (participant_id);
 
--- WISHLIST ITEMS 
+-- Элементы вишлиста
 CREATE TABLE IF NOT EXISTS wishlist_items (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    wishlist_id  UUID NOT NULL REFERENCES wishlists(id) ON DELETE CASCADE,
-    title        TEXT NOT NULL,
-    link         TEXT,
-    image_url    TEXT,
-    comment      TEXT,
-    created_at   TIMESTAMPTZ DEFAULT NOW()
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    wishlist_id UUID         NOT NULL REFERENCES wishlists(id) ON DELETE CASCADE,
+    title       VARCHAR(500) NOT NULL,
+    link        TEXT,
+    image_url   TEXT,
+    comment     TEXT,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE wishlist_items IS 'Элементы вишлиста';
-COMMENT ON COLUMN wishlist_items.id IS 'Уникальный идентификатор элемента';
-COMMENT ON COLUMN wishlist_items.wishlist_id IS 'Ссылка на вишлист';
-COMMENT ON COLUMN wishlist_items.title IS 'Название желаемого подарка';
-COMMENT ON COLUMN wishlist_items.link IS 'Ссылка на подарок';
-COMMENT ON COLUMN wishlist_items.image_url IS 'Ссылка на изображение подарка';
-COMMENT ON COLUMN wishlist_items.comment IS 'Комментарий пользователя';
-COMMENT ON COLUMN wishlist_items.created_at IS 'Дата добавления товара';
+CREATE INDEX IF NOT EXISTS idx_wishlist_items_wishlist_id ON wishlist_items (wishlist_id);
 
--- INVITATIONS 
+-- Приглашения
 CREATE TABLE IF NOT EXISTS invitations (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    token       TEXT UNIQUE NOT NULL,
-    expires_at  TIMESTAMPTZ NOT NULL,
-    created_by  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at  TIMESTAMPTZ DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ DEFAULT NOW()
+    id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id   UUID         NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    token      VARCHAR(255) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ  NOT NULL,
+    created_by UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE invitations IS 'Приглашения по ссылке (многоразовые)';
-COMMENT ON COLUMN invitations.id IS 'Уникальный идентификатор приглашения';
-COMMENT ON COLUMN invitations.event_id IS 'Событие';
-COMMENT ON COLUMN invitations.token IS 'Уникальный токен для ссылки';
-COMMENT ON COLUMN invitations.expires_at IS 'Срок действия приглашения';
-COMMENT ON COLUMN invitations.created_by IS 'Организатор, который создал приглашение';
-COMMENT ON COLUMN invitations.created_at IS 'Дата создания';
-COMMENT ON COLUMN invitations.updated_at IS 'Дата последнего обновления';
+CREATE INDEX IF NOT EXISTS idx_invitations_event_id ON invitations (event_id);
+CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations (token);
 
--- MESSAGES 
+-- Сообщения анонимного чата
 CREATE TABLE IF NOT EXISTS messages (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-    sender_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    receiver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    content     TEXT NOT NULL,
-    created_at  TIMESTAMPTZ DEFAULT NOW()
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id    UUID        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    sender_id   UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content     TEXT        NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE messages IS 'Сообщения в чате между Сантой и получателем';
-COMMENT ON COLUMN messages.id IS 'Уникальный ID сообщения';
-COMMENT ON COLUMN messages.event_id IS 'Событие';
-COMMENT ON COLUMN messages.sender_id IS 'Отправитель';
-COMMENT ON COLUMN messages.receiver_id IS 'Получатель';
-COMMENT ON COLUMN messages.content IS 'Текст сообщения';
-COMMENT ON COLUMN messages.created_at IS 'Дата отправки';
+CREATE INDEX IF NOT EXISTS idx_messages_event_id ON messages (event_id);
+CREATE INDEX IF NOT EXISTS idx_messages_pair ON messages (event_id, sender_id, receiver_id);
 
+-- OTP-коды для входа по email
 CREATE TABLE IF NOT EXISTS email_verification_codes (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email         TEXT NOT NULL,
-    code          TEXT NOT NULL,           -- 6-значный код
-    expires_at    TIMESTAMPTZ NOT NULL,
-    used          BOOLEAN NOT NULL DEFAULT false,
-    purpose       TEXT NOT NULL DEFAULT 'login_otp', -- login_otp | login_notification | draw_notification
-    created_at    TIMESTAMPTZ DEFAULT NOW()
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    email      VARCHAR(255) NOT NULL,
+    code       VARCHAR(10)  NOT NULL,
+    expires_at TIMESTAMPTZ  NOT NULL,
+    used       BOOLEAN      NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE email_verification_codes IS 'Коды подтверждения и уведомления по email';
-COMMENT ON COLUMN email_verification_codes.email IS 'Email получателя';
-COMMENT ON COLUMN email_verification_codes.code IS '6-значный код';
-COMMENT ON COLUMN email_verification_codes.purpose IS 'Для чего код (логин, уведомление о входе, жеребьёвка)';
-
--- Индексы
-CREATE INDEX idx_email_codes_email ON email_verification_codes(email);
-CREATE INDEX idx_email_codes_expires ON email_verification_codes(expires_at);
-CREATE INDEX idx_email_codes_purpose ON email_verification_codes(purpose);
-CREATE INDEX idx_users_oauth ON users(oauth_id, oauth_provider);
-CREATE INDEX idx_events_organizer ON events(organizer_id);
-CREATE INDEX idx_events_status ON events(status);
-CREATE INDEX idx_participants_event ON participants(event_id);
-CREATE INDEX idx_assignments_event ON assignments(event_id);
-CREATE INDEX idx_wishlists_participant ON wishlists(participant_id);
-CREATE INDEX idx_messages_event_pair ON messages(event_id, sender_id, receiver_id);
-
--- +goose StatementEnd
+CREATE INDEX IF NOT EXISTS idx_verification_email ON email_verification_codes (email);
+CREATE INDEX IF NOT EXISTS idx_verification_lookup ON email_verification_codes (email, code, used, expires_at);

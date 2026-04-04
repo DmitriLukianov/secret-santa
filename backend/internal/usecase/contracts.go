@@ -7,7 +7,6 @@ import (
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
 	"secret-santa-backend/internal/entity"
-	"secret-santa-backend/internal/oauth"
 
 	"github.com/google/uuid"
 )
@@ -26,16 +25,15 @@ type EventUseCase interface {
 	Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
 	GetAll(ctx context.Context) ([]entity.Event, error)
-	Update(ctx context.Context, id uuid.UUID, input dto.UpdateEventInput) error
+	// Update и Delete принимают userID — проверка что вызывает организатор
+	Update(ctx context.Context, id, userID uuid.UUID, input dto.UpdateEventInput) error
+	Delete(ctx context.Context, id, userID uuid.UUID) error
 	UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error
-	Delete(ctx context.Context, id uuid.UUID) error
-
 	OpenInvitation(ctx context.Context, id, userID uuid.UUID) error
 	CloseRegistration(ctx context.Context, id, userID uuid.UUID) error
 	StartDrawing(ctx context.Context, id, userID uuid.UUID) error
 	Finish(ctx context.Context, id, userID uuid.UUID) error
 	Cancel(ctx context.Context, id, userID uuid.UUID) error
-
 	GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
 }
 
@@ -43,8 +41,10 @@ type ParticipantUseCase interface {
 	Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
-	MarkGiftSent(ctx context.Context, participantID uuid.UUID) error
-	Delete(ctx context.Context, id uuid.UUID) error
+	// MarkGiftSent принимает requesterID — проверка что вызывает владелец
+	MarkGiftSent(ctx context.Context, participantID, requesterID uuid.UUID) error
+	// Delete принимает requesterID — проверка прав
+	Delete(ctx context.Context, id, requesterID uuid.UUID) error
 	GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error)
 }
 
@@ -65,19 +65,9 @@ type AssignmentUseCase interface {
 	GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error)
 }
 
-type ParticipantRepository interface {
-	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
-}
-
 type InvitationUseCase interface {
 	GenerateInvite(ctx context.Context, input dto.CreateInvitationInput, organizerID uuid.UUID) (dto.InvitationResponse, error)
 	JoinByInvite(ctx context.Context, input dto.JoinByInvitationInput) error
-}
-
-type ChatRepository interface {
-	// CreateMessage теперь возвращает полностью заполненную сущность из БД
-	CreateMessage(ctx context.Context, msg entity.Message) (entity.Message, error)
-	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
 }
 
 type ChatUseCase interface {
@@ -86,30 +76,32 @@ type ChatUseCase interface {
 	SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error)
 }
 
-// AssignmentRepository — полный интерфейс (используется в chat и wishlist)
+// --- Репозиторные интерфейсы ---
+
+type ParticipantRepository interface {
+	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
+}
+
 type AssignmentRepository interface {
 	Create(ctx context.Context, assignment entity.Assignment) (entity.Assignment, error)
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
 	DeleteByEvent(ctx context.Context, eventID uuid.UUID) error
-
 	TransactionalDraw(ctx context.Context, eventID uuid.UUID, assignments []entity.Assignment, newStatus definitions.EventStatus) error
 }
+
+type ChatRepository interface {
+	CreateMessage(ctx context.Context, msg entity.Message) (entity.Message, error)
+	GetMessagesByPair(ctx context.Context, eventID, user1ID, user2ID uuid.UUID) ([]entity.Message, error)
+}
+
 type EmailService interface {
 	SendLoginNotification(ctx context.Context, email, name string) error
 	SendOTP(ctx context.Context, email string) (string, error)
 	SendDrawNotification(ctx context.Context, email, eventTitle string) error
 }
 
-// === НОВОЕ: Репозиторий для OTP-кодов ===
 type VerificationRepository interface {
 	SaveCode(ctx context.Context, email, code string, expiresAt time.Time) error
 	GetValidCode(ctx context.Context, email, code string) (bool, error)
 	MarkAsUsed(ctx context.Context, email, code string) error
-}
-
-// AuthUseCase (обновлённый)
-type AuthUseCase interface {
-	LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error)
-	SendOTP(ctx context.Context, email string) error
-	VerifyOTP(ctx context.Context, email, code string) (string, error)
 }
