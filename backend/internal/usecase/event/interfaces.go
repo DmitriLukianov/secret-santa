@@ -11,7 +11,6 @@ import (
 )
 
 type Repository interface {
-	// Create теперь возвращает полностью заполненное событие из БД
 	Create(ctx context.Context, event entity.Event) (entity.Event, error)
 
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)

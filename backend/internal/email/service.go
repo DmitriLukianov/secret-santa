@@ -20,7 +20,6 @@ func New(cfg *config.Config, log *slog.Logger) *Service {
 	return &Service{cfg: cfg, log: log}
 }
 
-// SendLoginNotification — уведомление при входе
 func (s *Service) SendLoginNotification(ctx context.Context, email, name string) error {
 	subject := "✅ Вы успешно вошли в Тайный Санта"
 	body := fmt.Sprintf(`Привет, %s!
@@ -35,7 +34,6 @@ func (s *Service) SendLoginNotification(ctx context.Context, email, name string)
 	return s.send(ctx, email, subject, body)
 }
 
-// SendOTP — отправка 6-значного кода подтверждения
 func (s *Service) SendOTP(ctx context.Context, email string) (string, error) {
 	code := s.generateOTP()
 
@@ -55,7 +53,6 @@ func (s *Service) SendOTP(ctx context.Context, email string) (string, error) {
 	return code, nil
 }
 
-// SendDrawNotification — уведомление участникам о завершении жеребьёвки
 func (s *Service) SendDrawNotification(ctx context.Context, email, eventTitle string) error {
 	subject := "🎲 Жеребьёвка проведена!"
 	body := fmt.Sprintf(`Привет!
@@ -72,7 +69,6 @@ func (s *Service) SendDrawNotification(ctx context.Context, email, eventTitle st
 	return s.send(ctx, email, subject, body)
 }
 
-// generateOTP — криптостойкий 6-значный код
 func (s *Service) generateOTP() string {
 	const digits = "0123456789"
 	code := make([]byte, 6)
@@ -83,8 +79,6 @@ func (s *Service) generateOTP() string {
 	return string(code)
 }
 
-// send — внутренний метод отправки. Тихо возвращает nil если SMTP не настроен.
-// Это намеренно: email — вспомогательная функция, не должна ломать основной флоу.
 func (s *Service) send(ctx context.Context, to, subject, body string) error {
 	if !s.cfg.SMTPEnabled() {
 		if s.log != nil {

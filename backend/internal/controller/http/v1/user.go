@@ -27,7 +27,6 @@ func NewUserHandler(uc usecase.UserUseCase, eventUC usecase.EventUseCase) *UserH
 	}
 }
 
-// GetMe — профиль текущего авторизованного пользователя
 func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -45,7 +44,6 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response.UserToResponse(user))
 }
 
-// UpdateMe — обновление профиля текущего пользователя (partial update)
 func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	userID, err := helpers.GetUserID(r)
 	if err != nil {
@@ -72,7 +70,6 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Возвращаем обновлённый профиль
 	user, err := h.uc.GetByID(r.Context(), userID)
 	if err != nil {
 		response.WriteHTTPError(w, err)

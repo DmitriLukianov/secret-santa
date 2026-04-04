@@ -95,14 +95,6 @@ func (uc *UseCase) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity
 	return uc.repo.GetItems(ctx, wishlistID)
 }
 
-// GetForUser — получить вишлист с учётом visibility.
-//
-// Логика доступа:
-//   - "public"     → виден всем авторизованным
-//   - "friends"    → TODO: когда появится домен друзей; пока как "santa_only"
-//   - "santa_only" → только Санта этого участника
-//
-// Владелец вишлиста всегда видит свой собственный.
 func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error) {
 	if eventID == uuid.Nil || participantID == uuid.Nil || requesterID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -129,23 +121,21 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 		return nil, fmt.Errorf("failed to get participant: %w", err)
 	}
 
-	// Владелец всегда видит свой вишлист
 	if participant.UserID == requesterID {
 		return wishlist, nil
 	}
 
 	switch wishlist.Visibility {
 	case definitions.WishlistVisibilityPublic:
-		// Виден всем
+
 		return wishlist, nil
 
 	case definitions.WishlistVisibilityFriends:
-		// TODO: когда появится домен друзей — проверять дружбу.
-		// Пока трактуем как santa_only (самый безопасный fallback).
+
 		fallthrough
 
 	case definitions.WishlistVisibilitySantaOnly:
-		// Только Санта этого участника
+
 		assignments, err := uc.assignmentRepo.GetByEvent(ctx, eventID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check assignment: %w", err)

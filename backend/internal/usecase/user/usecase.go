@@ -78,7 +78,6 @@ func (uc *UseCase) GetByOAuthID(ctx context.Context, oauthID, oauthProvider stri
 	return uc.repo.GetByOAuthID(ctx, oauthID, oauthProvider)
 }
 
-// === НОВЫЙ МЕТОД ===
 func (uc *UseCase) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
 	if email == "" {
 		return nil, definitions.ErrInvalidUserInput

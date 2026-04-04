@@ -9,7 +9,6 @@ import (
 )
 
 type Repository interface {
-	// Create и CreateItem теперь возвращают полностью заполненные сущности из БД
 	Create(ctx context.Context, wishlist entity.Wishlist) (entity.Wishlist, error)
 	CreateItem(ctx context.Context, item entity.WishlistItem) (entity.WishlistItem, error)
 

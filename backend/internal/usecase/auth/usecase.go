@@ -19,7 +19,7 @@ type UseCase struct {
 	userUC           usecase.UserUseCase
 	emailService     usecase.EmailService
 	verificationRepo usecase.VerificationRepository
-	smtpEnabled      bool // кэшируем статус при инициализации
+	smtpEnabled      bool
 	log              *slog.Logger
 }
 
@@ -42,7 +42,6 @@ func NewWithLogger(userUC usecase.UserUseCase, emailService usecase.EmailService
 	}
 }
 
-// LoginWithOAuth — вход через OAuth (GitHub и др.) + уведомление о входе
 func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (string, error) {
 	if uc.log != nil {
 		uc.log.Info("oauth login started",
@@ -90,8 +89,6 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 	return createdUser.ID.String(), nil
 }
 
-// SendOTP — отправить код подтверждения на email.
-// Явно возвращает ошибку если SMTP не настроен — OTP без email не имеет смысла.
 func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 	if uc.log != nil {
 		uc.log.Info("send otp started", slog.String("email", email))
@@ -114,7 +111,6 @@ func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 	return nil
 }
 
-// VerifyOTP — проверить код и вернуть userID.
 func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, error) {
 	if uc.log != nil {
 		uc.log.Info("verify otp started", slog.String("email", email))
@@ -127,7 +123,6 @@ func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, e
 
 	_ = uc.verificationRepo.MarkAsUsed(ctx, email, code)
 
-	// Ищем существующего пользователя по email
 	user, err := uc.userUC.GetByEmail(ctx, email)
 	if err == nil && user != nil {
 		if uc.emailService != nil {
@@ -136,8 +131,6 @@ func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, e
 		return user.ID.String(), nil
 	}
 
-	// Если пользователя нет — создаём (passwordless регистрация)
-	// Берём имя из email (часть до @) как дефолтное
 	defaultName := nameFromEmail(email)
 
 	createInput := dto.CreateUserInput{
@@ -157,8 +150,6 @@ func (uc *UseCase) VerifyOTP(ctx context.Context, email, code string) (string, e
 	return createdUser.ID.String(), nil
 }
 
-// nameFromEmail — извлекает часть до @ и делает из неё читаемое имя.
-// "john.doe@example.com" → "john.doe"
 func nameFromEmail(email string) string {
 	parts := strings.SplitN(email, "@", 2)
 	if len(parts) == 0 || parts[0] == "" {

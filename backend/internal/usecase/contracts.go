@@ -25,7 +25,7 @@ type EventUseCase interface {
 	Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
 	GetAll(ctx context.Context) ([]entity.Event, error)
-	// Update и Delete принимают userID — проверка что вызывает организатор
+
 	Update(ctx context.Context, id, userID uuid.UUID, input dto.UpdateEventInput) error
 	Delete(ctx context.Context, id, userID uuid.UUID) error
 	UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error
@@ -41,9 +41,9 @@ type ParticipantUseCase interface {
 	Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Participant, error)
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)
-	// MarkGiftSent принимает requesterID — проверка что вызывает владелец
+
 	MarkGiftSent(ctx context.Context, participantID, requesterID uuid.UUID) error
-	// Delete принимает requesterID — проверка прав
+
 	Delete(ctx context.Context, id, requesterID uuid.UUID) error
 	GetByUserAndEvent(ctx context.Context, userID, eventID uuid.UUID) (*entity.Participant, error)
 }
@@ -75,8 +75,6 @@ type ChatUseCase interface {
 	GetSenderChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error)
 	SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error)
 }
-
-// --- Репозиторные интерфейсы ---
 
 type ParticipantRepository interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Participant, error)

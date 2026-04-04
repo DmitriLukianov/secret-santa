@@ -10,7 +10,6 @@ import (
 )
 
 type Repository interface {
-	// Create теперь возвращает полностью заполненную сущность из БД (как в wishlist/participant/event)
 	Create(ctx context.Context, assignment entity.Assignment) (entity.Assignment, error)
 
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)

@@ -68,7 +68,6 @@ func Load() *Config {
 		GithubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", ""),
 	}
 
-	// Обязательные переменные — без них сервис не может работать совсем
 	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
@@ -76,7 +75,6 @@ func Load() *Config {
 		log.Fatal("JWT_SECRET must be at least 32 characters")
 	}
 
-	// SMTP — предупреждаем, но не падаем
 	if !cfg.SMTPEnabled() {
 		log.Println("WARNING: SMTP not configured — email notifications are disabled")
 	}

@@ -71,7 +71,6 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.
 	return uc.repo.GetByEvent(ctx, eventID)
 }
 
-// MarkGiftSent — только сам участник может отметить отправку подарка.
 func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID, requesterID uuid.UUID) error {
 	if participantID == uuid.Nil || requesterID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
@@ -105,8 +104,6 @@ func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID, requesterID 
 	return nil
 }
 
-// Delete — участник может удалить только себя.
-// requesterID — ID текущего пользователя из JWT.
 func (uc *UseCase) Delete(ctx context.Context, id, requesterID uuid.UUID) error {
 	if id == uuid.Nil || requesterID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
@@ -124,8 +121,6 @@ func (uc *UseCase) Delete(ctx context.Context, id, requesterID uuid.UUID) error 
 		return definitions.ErrParticipantNotFound
 	}
 
-	// Только сам участник может удалить себя
-	// (организатор управляет событием через другие эндпоинты)
 	if p.UserID != requesterID {
 		return definitions.ErrForbidden
 	}

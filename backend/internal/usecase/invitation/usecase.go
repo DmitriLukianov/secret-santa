@@ -17,7 +17,7 @@ type UseCase struct {
 	repo          Repository
 	eventRepo     EventRepository
 	participantUC usecase.ParticipantUseCase
-	baseURL       string // читается из config.AppBaseURL
+	baseURL       string
 	log           *slog.Logger
 }
 
@@ -63,7 +63,6 @@ func (uc *UseCase) GenerateInvite(ctx context.Context, input dto.CreateInvitatio
 		return dto.InvitationResponse{}, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
-	// Используем baseURL из конфига — никакого захардкоженного домена
 	inviteURL := fmt.Sprintf("%s/invite/%s", uc.baseURL, createdInv.Token)
 
 	if uc.log != nil {

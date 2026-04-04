@@ -64,7 +64,6 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response.ParticipantsToResponse(participants))
 }
 
-// MarkGiftSent — только сам участник может это сделать (проверка в usecase).
 func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
@@ -89,7 +88,6 @@ func (h *ParticipantHandler) MarkGiftSent(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]string{"message": "Подарок отмечен как отправленный"})
 }
 
-// Delete — только сам участник может удалить себя (проверка в usecase).
 func (h *ParticipantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)

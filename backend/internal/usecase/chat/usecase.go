@@ -33,7 +33,6 @@ func NewWithLogger(repo usecase.ChatRepository, participantRepo usecase.Particip
 	return uc
 }
 
-// SendMessage — отправить сообщение (автоматически определяет пару)
 func (uc *UseCase) SendMessage(ctx context.Context, eventID, userID uuid.UUID, content string) (entity.Message, error) {
 	if content == "" {
 		return entity.Message{}, definitions.ErrInvalidUserInput
@@ -68,7 +67,6 @@ func (uc *UseCase) SendMessage(ctx context.Context, eventID, userID uuid.UUID, c
 
 	msg := entity.NewMessage(eventID, userID, receiverID, content)
 
-	// Теперь CreateMessage возвращает полную сущность из БД
 	createdMsg, err := uc.repo.CreateMessage(ctx, msg)
 	if err != nil {
 		return entity.Message{}, fmt.Errorf("failed to create message: %w", err)
@@ -83,7 +81,6 @@ func (uc *UseCase) SendMessage(ctx context.Context, eventID, userID uuid.UUID, c
 	return createdMsg, nil
 }
 
-// GetRecipientChat — чат «Кому я Санта» (я — giver)
 func (uc *UseCase) GetRecipientChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error) {
 	if uc.log != nil {
 		uc.log.Info("get recipient chat started",
@@ -111,7 +108,6 @@ func (uc *UseCase) GetRecipientChat(ctx context.Context, eventID, userID uuid.UU
 	return uc.repo.GetMessagesByPair(ctx, eventID, userID, receiverID)
 }
 
-// GetSenderChat — чат «Кто мой Санта» (я — receiver)
 func (uc *UseCase) GetSenderChat(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Message, error) {
 	if uc.log != nil {
 		uc.log.Info("get sender chat started",

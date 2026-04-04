@@ -28,7 +28,6 @@ func NewRouter(
 	router.Use(middleware.RecoveryMiddleware)
 	router.Use(middleware.TimeoutMiddleware(10 * time.Second))
 
-	// Публичные маршруты
 	router.Route("/auth", func(r chi.Router) {
 		r.Get("/login", authHandler.Login)
 		r.Get("/callback", authHandler.Callback)
@@ -42,13 +41,9 @@ func NewRouter(
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// Все защищённые маршруты
 	router.Group(func(r chi.Router) {
 		r.Use(middleware.NewAuthMiddleware(jwtManager, log).Handler)
 
-		// --- Users ---
-		// ВАЖНО: /me/* должны быть зарегистрированы ДО /{id},
-		// иначе chi будет матчить "me" как UUID и возвращать 400.
 		r.Route("/users", func(r chi.Router) {
 			r.Get("/me", userHandler.GetMe)
 			r.Patch("/me", userHandler.UpdateMe)
@@ -61,7 +56,6 @@ func NewRouter(
 			r.Delete("/{id}", userHandler.DeleteUser)
 		})
 
-		// --- Events ---
 		r.Route("/events", func(r chi.Router) {
 			r.Post("/", eventHandler.CreateEvent)
 			r.Get("/", eventHandler.GetEvents)
@@ -69,22 +63,18 @@ func NewRouter(
 			r.Put("/{id}", eventHandler.UpdateEvent)
 			r.Delete("/{id}", eventHandler.DeleteEvent)
 
-			// Смена статуса — только организатор (проверяется в usecase)
 			r.Post("/{id}/open-invitation", eventHandler.OpenInvitation)
 			r.Post("/{id}/close-registration", eventHandler.CloseRegistration)
 			r.Post("/{id}/start-drawing", eventHandler.StartDrawing)
 			r.Post("/{id}/finish", eventHandler.FinishEvent)
 			r.Post("/{id}/cancel", eventHandler.CancelEvent)
 
-			// Участники события
 			r.Post("/{eventId}/participants", participantHandler.Add)
 			r.Get("/{eventId}/participants", participantHandler.GetByEvent)
 
-			// Жеребьёвка
 			r.Post("/{eventId}/assign", assignmentHandler.Draw)
 			r.Get("/{eventId}/assignments", assignmentHandler.GetByEvent)
 
-			// Чат (анонимные вопросы тайному санте)
 			r.Route("/{eventId}/chat", func(r chi.Router) {
 				r.Get("/recipient", chatHandler.GetRecipientChat)
 				r.Get("/sender", chatHandler.GetSenderChat)
@@ -92,23 +82,18 @@ func NewRouter(
 			})
 		})
 
-		// --- Participants (отдельные операции) ---
 		r.Post("/participants/{id}/gift-sent", participantHandler.MarkGiftSent)
 		r.Delete("/participants/{id}", participantHandler.Delete)
 
-		// --- Wishlists ---
-		// Вишлист текущего пользователя для события
 		r.Route("/users/me/wishlist", func(r chi.Router) {
 			r.Post("/", wishlistHandler.Create)
 			r.Get("/", wishlistHandler.GetByUser)
 		})
 
-		// Вишлист конкретного участника (с проверкой видимости)
 		r.Route("/wishlists/{participantId}", func(r chi.Router) {
 			r.Get("/", wishlistHandler.GetByParticipant)
 		})
 
-		// Элементы вишлиста
 		r.Route("/wishlists/{wishlistId}/items", func(r chi.Router) {
 			r.Post("/", wishlistHandler.AddItem)
 			r.Get("/", wishlistHandler.GetItems)
@@ -116,7 +101,6 @@ func NewRouter(
 			r.Delete("/{itemId}", wishlistHandler.DeleteItem)
 		})
 
-		// --- Invitations ---
 		r.Route("/invitations", func(r chi.Router) {
 			r.Post("/generate", invitationHandler.GenerateInvite)
 		})

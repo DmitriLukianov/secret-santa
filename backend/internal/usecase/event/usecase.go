@@ -31,7 +31,6 @@ func NewWithLogger(repo Repository, participantRepo participant.Repository, log 
 	}
 }
 
-// Create — создаёт событие + добавляет организатора как участника
 func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organizerID uuid.UUID) (entity.Event, error) {
 	if uc.log != nil {
 		uc.log.Info("create event started",
@@ -64,7 +63,6 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		return entity.Event{}, fmt.Errorf("%w: %s", definitions.ErrConflict, err.Error())
 	}
 
-	// Автоматически добавляем организатора как участника
 	organizerParticipant := entity.NewParticipant(createdEvent.ID, organizerID, definitions.ParticipantRoleOrganizer)
 	if _, err = uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
 		if uc.log != nil {
@@ -96,7 +94,6 @@ func (uc *UseCase) GetAll(ctx context.Context) ([]entity.Event, error) {
 	return uc.repo.GetAll(ctx)
 }
 
-// Update — обновление события. Только организатор может это делать.
 func (uc *UseCase) Update(ctx context.Context, id, userID uuid.UUID, input dto.UpdateEventInput) error {
 	if id == uuid.Nil || userID == uuid.Nil {
 		return definitions.ErrInvalidUserInput
@@ -107,7 +104,6 @@ func (uc *UseCase) Update(ctx context.Context, id, userID uuid.UUID, input dto.U
 		return fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
 	}
 
-	// Только организатор может редактировать событие
 	if eventPtr.OrganizerID != userID {
 		return definitions.ErrNotOrganizer
 	}
@@ -129,7 +125,6 @@ func (uc *UseCase) Update(ctx context.Context, id, userID uuid.UUID, input dto.U
 	return nil
 }
 
-// Delete — удаление события. Только организатор.
 func (uc *UseCase) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	if id == uuid.Nil || userID == uuid.Nil {
 		return definitions.ErrInvalidUserInput

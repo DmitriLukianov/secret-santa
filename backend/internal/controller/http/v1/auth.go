@@ -72,7 +72,6 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"token": jwtToken})
 }
 
-// SendOTP — отправить код на почту (обычный вход)
 func (h *AuthHandler) SendOTP(w http.ResponseWriter, r *http.Request) {
 	var req dto.SendOTPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -95,7 +94,6 @@ func (h *AuthHandler) SendOTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// VerifyOTP — проверить код и выдать токен
 func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	var req dto.VerifyOTPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

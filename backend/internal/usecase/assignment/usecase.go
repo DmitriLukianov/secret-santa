@@ -101,7 +101,6 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
 
-	// Уведомления — не блокируют основной флоу, ошибки только логируются
 	if uc.emailService != nil && uc.userUC != nil {
 		notified := 0
 		for _, p := range participants {
@@ -141,8 +140,6 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 	return nil
 }
 
-// createDerangement — создаёт перестановку без неподвижных точек (никто не дарит сам себе).
-// Использует crypto/rand для криптографически стойкого перемешивания.
 func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Participant) ([]entity.Assignment, error) {
 	n := len(participants)
 	ids := make([]uuid.UUID, n)
@@ -155,12 +152,10 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 		shuffled := make([]uuid.UUID, n)
 		copy(shuffled, ids)
 
-		// Fisher-Yates shuffle с crypto/rand
 		if err := cryptoShuffle(shuffled); err != nil {
 			return nil, fmt.Errorf("failed to shuffle: %w", err)
 		}
 
-		// Проверяем что нет самоназначений
 		valid := true
 		for i := 0; i < n; i++ {
 			if shuffled[i] == ids[i] {
@@ -181,7 +176,6 @@ func (uc *UseCase) createDerangement(eventID uuid.UUID, participants []entity.Pa
 	return nil, fmt.Errorf("failed to generate valid derangement after %d attempts", maxAttempts)
 }
 
-// cryptoShuffle — Fisher-Yates с crypto/rand вместо math/rand
 func cryptoShuffle(s []uuid.UUID) error {
 	n := len(s)
 	for i := n - 1; i > 0; i-- {
@@ -195,8 +189,6 @@ func cryptoShuffle(s []uuid.UUID) error {
 	return nil
 }
 
-// GetByEvent возвращает назначение текущего пользователя (только своё).
-// Участник видит только кому он дарит — не весь список.
 func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {
 	if eventID == uuid.Nil || userID == uuid.Nil {
 		return nil, definitions.ErrInvalidUserInput
@@ -207,7 +199,6 @@ func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([
 		return nil, fmt.Errorf("failed to get assignments: %w", err)
 	}
 
-	// Каждый участник видит только своё назначение
 	for _, a := range assignments {
 		if a.GiverID == userID {
 			return []entity.Assignment{a}, nil

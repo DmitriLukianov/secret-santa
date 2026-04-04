@@ -47,7 +47,6 @@ func New() *App {
 		panic(err)
 	}
 
-	// Репозитории
 	userRepo := userrepo.New(db)
 	eventRepo := eventrepo.New(db)
 	participantRepo := participantrepo.New(db)
@@ -57,11 +56,9 @@ func New() *App {
 	chatRepo := chatrepo.New(db)
 	verificationRepo := verificationrepo.New(db)
 
-	// Use cases
 	userUC := userusecase.NewWithLogger(userRepo, log)
 	emailService := email.New(cfg, log)
 
-	// Передаём smtpEnabled явно — authUC использует его чтобы не принимать OTP без SMTP
 	authUC := authusecase.NewWithLogger(userUC, emailService, verificationRepo, cfg.SMTPEnabled(), log)
 
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
@@ -71,7 +68,6 @@ func New() *App {
 	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, cfg.AppBaseURL, log)
 	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log)
 
-	// Handlers
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC)

@@ -15,14 +15,11 @@ type Message struct {
 	CreatedAt  time.Time `db:"created_at"`
 }
 
-// NewMessage — чистый DB-first конструктор.
-// ID и CreatedAt теперь генерирует PostgreSQL через RETURNING.
 func NewMessage(eventID, senderID, receiverID uuid.UUID, content string) Message {
 	return Message{
 		EventID:    eventID,
 		SenderID:   senderID,
 		ReceiverID: receiverID,
 		Content:    content,
-		// ID и CreatedAt будут заполнены БД
 	}
 }
