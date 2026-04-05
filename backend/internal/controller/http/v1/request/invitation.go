@@ -10,3 +10,9 @@ type CreateInvitationRequest struct {
 type JoinByInvitationRequest struct {
 	Token string `json:"token" validate:"required"`
 }
+
+type SendEmailInvitationRequest struct {
+	EventID        string `json:"eventId" validate:"required,uuid"`
+	RecipientEmail string `json:"recipientEmail" validate:"required,email"`
+	ExpiresIn      string `json:"expiresIn,omitempty"`
+}

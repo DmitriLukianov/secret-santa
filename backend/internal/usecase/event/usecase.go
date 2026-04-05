@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -10,6 +11,7 @@ import (
 	"secret-santa-backend/internal/entity"
 	participant "secret-santa-backend/internal/usecase/participant"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/google/uuid"
 )
 
@@ -60,15 +62,21 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		if uc.log != nil {
 			uc.log.Error("failed to create event", slog.String("error", err.Error()))
 		}
-		return entity.Event{}, fmt.Errorf("%w: %s", definitions.ErrConflict, err.Error())
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return entity.Event{}, definitions.ErrConflict
+		}
+		return entity.Event{}, fmt.Errorf("failed to create event: %w", err)
 	}
 
-	organizerParticipant := entity.NewParticipant(createdEvent.ID, organizerID, definitions.ParticipantRoleOrganizer)
-	if _, err = uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
-		if uc.log != nil {
-			uc.log.Error("failed to create organizer participant", slog.String("error", err.Error()))
+	if input.WantParticipate {
+		organizerParticipant := entity.NewParticipant(createdEvent.ID, organizerID, definitions.ParticipantRoleOrganizer)
+		if _, err = uc.participantRepo.Create(ctx, organizerParticipant); err != nil {
+			if uc.log != nil {
+				uc.log.Error("failed to create organizer participant", slog.String("error", err.Error()))
+			}
+			return entity.Event{}, fmt.Errorf("failed to create organizer participant: %w", err)
 		}
-		return entity.Event{}, fmt.Errorf("failed to create organizer participant: %w", err)
 	}
 
 	if uc.log != nil {
@@ -85,7 +93,7 @@ func (uc *UseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, er
 	}
 	event, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
+		return nil, definitions.ErrEventNotFound
 	}
 	return event, nil
 }
@@ -101,7 +109,7 @@ func (uc *UseCase) Update(ctx context.Context, id, userID uuid.UUID, input dto.U
 
 	eventPtr, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
+		return definitions.ErrEventNotFound
 	}
 
 	if eventPtr.OrganizerID != userID {
@@ -132,7 +140,7 @@ func (uc *UseCase) Delete(ctx context.Context, id, userID uuid.UUID) error {
 
 	eventPtr, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
+		return definitions.ErrEventNotFound
 	}
 
 	if eventPtr.OrganizerID != userID {
@@ -154,6 +162,10 @@ func (uc *UseCase) Delete(ctx context.Context, id, userID uuid.UUID) error {
 		uc.log.Info("event deleted successfully", slog.String("event_id", id.String()))
 	}
 	return nil
+}
+
+func (uc *UseCase) Activate(ctx context.Context, id, userID uuid.UUID) error {
+	return uc.changeStatus(ctx, id, userID, definitions.EventStatusActive)
 }
 
 func (uc *UseCase) Finish(ctx context.Context, id, userID uuid.UUID) error {
@@ -183,7 +195,7 @@ func (uc *UseCase) changeStatus(ctx context.Context, id, userID uuid.UUID, newSt
 
 	eventPtr, err := uc.repo.GetByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
+		return definitions.ErrEventNotFound
 	}
 
 	if eventPtr.OrganizerID != userID {
@@ -220,7 +232,7 @@ func (uc *UseCase) GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.
 
 	events, err := uc.repo.GetEventsForUser(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", definitions.ErrEventNotFound, err.Error())
+		return nil, definitions.ErrEventNotFound
 	}
 	return events, nil
 }

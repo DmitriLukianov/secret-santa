@@ -13,7 +13,8 @@ type Config struct {
 	AppPort    string `env:"APP_PORT" envDefault:"8080"`
 	AppEnv     string `env:"APP_ENV" envDefault:"local"`
 	LogLevel   string `env:"LOG_LEVEL" envDefault:"info"`
-	AppBaseURL string `env:"APP_BASE_URL" envDefault:"http://localhost:8080"`
+	AppBaseURL  string `env:"APP_BASE_URL" envDefault:"http://localhost:8080"`
+	FrontendURL string `env:"FRONTEND_URL" envDefault:"http://localhost:5173"`
 
 	DatabaseURL string `env:"DATABASE_URL"`
 
@@ -49,7 +50,8 @@ func Load() *Config {
 		AppPort:    getEnv("APP_PORT", "8080"),
 		AppEnv:     getEnv("APP_ENV", "local"),
 		LogLevel:   getEnv("LOG_LEVEL", "info"),
-		AppBaseURL: getEnv("APP_BASE_URL", "http://localhost:8080"),
+		AppBaseURL:  getEnv("APP_BASE_URL", "http://localhost:8080"),
+		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:5173"),
 
 		DatabaseURL: getEnv("DATABASE_URL", ""),
 

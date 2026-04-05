@@ -171,7 +171,7 @@ func (h *WishlistHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.uc.AddItem(r.Context(), wishlistID, req.Title, &req.Link, &req.ImageURL, &req.Comment)
+	item, err := h.uc.AddItem(r.Context(), wishlistID, req.Title, &req.Link, &req.ImageURL, &req.Comment, req.Price)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -242,7 +242,7 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedItem, err := h.uc.UpdateItem(r.Context(), itemID, req.Title, &req.Link, &req.ImageURL, &req.Comment)
+	updatedItem, err := h.uc.UpdateItem(r.Context(), itemID, req.Title, &req.Link, &req.ImageURL, &req.Comment, req.Price)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return

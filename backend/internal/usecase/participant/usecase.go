@@ -7,13 +7,19 @@ import (
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 	"secret-santa-backend/internal/helpers"
+	"secret-santa-backend/internal/usecase"
 
 	"github.com/google/uuid"
 )
 
 type UseCase struct {
-	repo Repository
-	log  *slog.Logger
+	repo           Repository
+	notificationUC usecase.NotificationUseCase
+	log            *slog.Logger
+}
+
+func (uc *UseCase) SetNotificationUC(notificationUC usecase.NotificationUseCase) {
+	uc.notificationUC = notificationUC
 }
 
 func New(repo Repository) *UseCase {
@@ -96,6 +102,12 @@ func (uc *UseCase) MarkGiftSent(ctx context.Context, participantID, requesterID 
 			uc.log.Error("failed to mark gift sent", slog.String("error", err.Error()))
 		}
 		return err
+	}
+
+	if uc.notificationUC != nil {
+		_ = uc.notificationUC.Notify(ctx, p.UserID, "gift_sent", map[string]string{
+			"participant_id": participantID.String(),
+		})
 	}
 
 	if uc.log != nil {

@@ -15,7 +15,7 @@ func createWishlistQuery() squirrel.InsertBuilder {
 
 func createWishlistItemQuery() squirrel.InsertBuilder {
 	return qb.Insert("wishlist_items").
-		Columns("wishlist_id", "title", "link", "image_url", "comment")
+		Columns("wishlist_id", "title", "link", "image_url", "comment", "price")
 	// id, created_at — БД сама
 }
 
@@ -26,7 +26,7 @@ func getWishlistByParticipantQuery(participantID string) squirrel.SelectBuilder 
 }
 
 func getWishlistItemsQuery(wishlistID string) squirrel.SelectBuilder {
-	return qb.Select("id", "wishlist_id", "title", "link", "image_url", "comment", "created_at").
+	return qb.Select("id", "wishlist_id", "title", "link", "image_url", "comment", "price", "created_at").
 		From("wishlist_items").
 		Where(squirrel.Eq{"wishlist_id": wishlistID})
 }
@@ -43,7 +43,7 @@ func deleteWishlistItemQuery(itemID string) squirrel.DeleteBuilder {
 
 func getWishlistItemByIDQuery(itemID uuid.UUID) squirrel.SelectBuilder {
 	return qb.Select(
-		"id", "wishlist_id", "title", "link", "image_url", "comment", "created_at",
+		"id", "wishlist_id", "title", "link", "image_url", "comment", "price", "created_at",
 	).
 		From("wishlist_items").
 		Where(squirrel.Eq{"id": itemID})

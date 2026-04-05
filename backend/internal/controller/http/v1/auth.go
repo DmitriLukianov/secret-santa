@@ -14,16 +14,18 @@ import (
 )
 
 type AuthHandler struct {
-	provider oauth.Provider
-	jwt      *oauth.JWTManager
-	uc       *authuc.UseCase
+	provider    oauth.Provider
+	jwt         *oauth.JWTManager
+	uc          *authuc.UseCase
+	frontendURL string
 }
 
-func NewAuthHandler(provider oauth.Provider, jwt *oauth.JWTManager, uc *authuc.UseCase) *AuthHandler {
+func NewAuthHandler(provider oauth.Provider, jwt *oauth.JWTManager, uc *authuc.UseCase, frontendURL string) *AuthHandler {
 	return &AuthHandler{
-		provider: provider,
-		jwt:      jwt,
-		uc:       uc,
+		provider:    provider,
+		jwt:         jwt,
+		uc:          uc,
+		frontendURL: frontendURL,
 	}
 }
 
@@ -68,8 +70,8 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"token": jwtToken})
+	redirectURL := h.frontendURL + "/auth/callback?token=" + jwtToken
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 func (h *AuthHandler) SendOTP(w http.ResponseWriter, r *http.Request) {

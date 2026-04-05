@@ -21,6 +21,7 @@ type WishlistItem struct {
 	Link       *string   `db:"link"`
 	ImageURL   *string   `db:"image_url"`
 	Comment    *string   `db:"comment"`
+	Price      *float64  `db:"price"`
 	CreatedAt  time.Time `db:"created_at"`
 	Wishlist   *Wishlist `db:"-"`
 }
@@ -32,12 +33,13 @@ func NewWishlist(participantID uuid.UUID, visibility string) Wishlist {
 	}
 }
 
-func NewWishlistItem(wishlistID uuid.UUID, title string, link, imageURL, comment *string) WishlistItem {
+func NewWishlistItem(wishlistID uuid.UUID, title string, link, imageURL, comment *string, price *float64) WishlistItem {
 	return WishlistItem{
 		WishlistID: wishlistID,
 		Title:      title,
 		Link:       link,
 		ImageURL:   imageURL,
 		Comment:    comment,
+		Price:      price,
 	}
 }

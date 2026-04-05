@@ -17,6 +17,7 @@ type UseCase struct {
 	repo            Repository
 	participantRepo ParticipantRepository
 	assignmentRepo  AssignmentRepository
+	friendshipRepo  FriendshipRepository
 	log             *slog.Logger
 }
 
@@ -24,11 +25,12 @@ func New(repo Repository) *UseCase {
 	return &UseCase{repo: repo}
 }
 
-func NewWithLogger(repo Repository, participantRepo ParticipantRepository, assignmentRepo AssignmentRepository, log *slog.Logger) *UseCase {
+func NewWithLogger(repo Repository, participantRepo ParticipantRepository, assignmentRepo AssignmentRepository, friendshipRepo FriendshipRepository, log *slog.Logger) *UseCase {
 	return &UseCase{
 		repo:            repo,
 		participantRepo: participantRepo,
 		assignmentRepo:  assignmentRepo,
+		friendshipRepo:  friendshipRepo,
 		log:             log,
 	}
 }
@@ -65,12 +67,12 @@ func (uc *UseCase) Create(ctx context.Context, participantID uuid.UUID, visibili
 	return createdWishlist, nil
 }
 
-func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
+func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string, price *float64) (entity.WishlistItem, error) {
 	if wishlistID == uuid.Nil {
 		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
 	}
 
-	item := entity.NewWishlistItem(wishlistID, title, link, imageURL, comment)
+	item := entity.NewWishlistItem(wishlistID, title, link, imageURL, comment, price)
 	createdItem, err := uc.repo.CreateItem(ctx, item)
 	if err != nil {
 		if uc.log != nil {
@@ -132,7 +134,16 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 
 	case definitions.WishlistVisibilityFriends:
 
-		fallthrough
+		friendship, err := uc.friendshipRepo.GetByUsers(ctx, requesterID, participant.UserID)
+		if err == nil && friendship != nil && friendship.Status == definitions.FriendshipStatusAccepted {
+			return wishlist, nil
+		}
+		if uc.log != nil {
+			uc.log.Warn("wishlist access denied: not friends",
+				slog.String("requester_id", requesterID.String()),
+			)
+		}
+		return nil, definitions.ErrWishlistVisibilityForbidden
 
 	case definitions.WishlistVisibilitySantaOnly:
 
@@ -165,12 +176,12 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 	}
 }
 
-func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error) {
+func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string, price *float64) (entity.WishlistItem, error) {
 	if itemID == uuid.Nil {
 		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
 	}
 
-	if err := uc.repo.UpdateItem(ctx, itemID, title, link, imageURL, comment); err != nil {
+	if err := uc.repo.UpdateItem(ctx, itemID, title, link, imageURL, comment, price); err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to update wishlist item", slog.String("error", err.Error()))
 		}

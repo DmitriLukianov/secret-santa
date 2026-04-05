@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS wishlist_items (
     link        TEXT,
     image_url   TEXT,
     comment     TEXT,
+    price       NUMERIC(10,2),
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
@@ -125,3 +126,32 @@ CREATE TABLE IF NOT EXISTS email_verification_codes (
 
 CREATE INDEX IF NOT EXISTS idx_verification_email ON email_verification_codes (email);
 CREATE INDEX IF NOT EXISTS idx_verification_lookup ON email_verification_codes (email, code, used, expires_at);
+
+-- Дружеские связи
+CREATE TABLE IF NOT EXISTS friendships (
+    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    requester_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    addressee_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status       VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (requester_id, addressee_id),
+    CONSTRAINT no_self_friendship CHECK (requester_id != addressee_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friendships_requester ON friendships (requester_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_addressee ON friendships (addressee_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_status ON friendships (status);
+
+-- Уведомления
+CREATE TABLE IF NOT EXISTS notifications (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type       VARCHAR(50) NOT NULL,
+    payload    JSONB       NOT NULL DEFAULT '{}',
+    is_read    BOOLEAN     NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications (user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (user_id, is_read) WHERE is_read = false;

@@ -24,6 +24,12 @@ const (
 	WishlistVisibilitySantaOnly = "santa_only"
 )
 
+const (
+	FriendshipStatusPending  = "pending"
+	FriendshipStatusAccepted = "accepted"
+	FriendshipStatusDeclined = "declined"
+)
+
 type contextKey string
 
 const (

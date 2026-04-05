@@ -69,6 +69,23 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 		return "", fmt.Errorf("failed to lookup oauth user: %w", err)
 	}
 
+	// Try to find existing account by email (e.g. registered via OTP earlier)
+	if info.Email != "" {
+		existingUser, emailErr := uc.userUC.GetByEmail(ctx, info.Email)
+		if emailErr == nil && existingUser != nil {
+			if uc.log != nil {
+				uc.log.Info("oauth user matched existing email account",
+					slog.String("user_id", existingUser.ID.String()),
+					slog.String("email", info.Email),
+				)
+			}
+			if uc.emailService != nil {
+				_ = uc.emailService.SendLoginNotification(ctx, existingUser.Email, existingUser.Name)
+			}
+			return existingUser.ID.String(), nil
+		}
+	}
+
 	createInput := dto.CreateUserInput{
 		Name:          info.Name,
 		Email:         info.Email,

@@ -23,6 +23,10 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 
 	switch {
 
+	case errors.Is(err, definitions.ErrUnauthorized):
+		status = http.StatusUnauthorized
+		message = err.Error()
+
 	case errors.Is(err, definitions.ErrNotFound),
 		errors.Is(err, definitions.ErrEventNotFound),
 		errors.Is(err, definitions.ErrWishlistNotFound),
@@ -42,7 +46,8 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 	case errors.Is(err, definitions.ErrConflict),
 		errors.Is(err, definitions.ErrAlreadyParticipating),
 		errors.Is(err, definitions.ErrDuplicateParticipant),
-		errors.Is(err, definitions.ErrEventAlreadyFinished):
+		errors.Is(err, definitions.ErrEventAlreadyFinished),
+		errors.Is(err, definitions.ErrFriendshipAlreadyExists):
 		status = http.StatusConflict
 		message = err.Error()
 
@@ -53,12 +58,16 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		errors.Is(err, definitions.ErrInvalidOAuthUserInfo),
 		errors.Is(err, definitions.ErrInvalidEventState),
 		errors.Is(err, definitions.ErrNotEnoughParticipants),
-		errors.Is(err, definitions.ErrInvalidWishlistVisibility):
+		errors.Is(err, definitions.ErrInvalidWishlistVisibility),
+		errors.Is(err, definitions.ErrFriendshipInvalidStatus):
 		status = http.StatusBadRequest
 		message = err.Error()
 
-	default:
+	case errors.Is(err, definitions.ErrFriendshipNotFound):
+		status = http.StatusNotFound
+		message = err.Error()
 
+	default:
 		status = http.StatusInternalServerError
 	}
 
@@ -73,7 +82,6 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 		Error: message,
 		Code:  status,
 	}); err != nil {
-
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }

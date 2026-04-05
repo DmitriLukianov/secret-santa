@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"secret-santa-backend/internal/controller/http/v1/request"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
@@ -54,6 +56,55 @@ func (h *InvitationHandler) GenerateInvite(w http.ResponseWriter, r *http.Reques
 	}
 
 	resp, err := h.uc.GenerateInvite(r.Context(), input, userID)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *InvitationHandler) SendEmailInvitation(w http.ResponseWriter, r *http.Request) {
+	userID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	var req request.SendEmailInvitationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+	if err := helpers.ValidateStruct(&req); err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+		return
+	}
+
+	eventID, err := uuid.Parse(req.EventID)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	expiresIn := 7 * 24 * time.Hour
+	if req.ExpiresIn != "" {
+		if d, err := time.ParseDuration(req.ExpiresIn); err == nil {
+			expiresIn = d
+		} else {
+			response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
+			return
+		}
+	}
+
+	input := dto.CreateInvitationInput{
+		EventID:   eventID,
+		ExpiresIn: expiresIn,
+	}
+
+	resp, err := h.uc.SendEmailInvitation(r.Context(), input, userID, req.RecipientEmail)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return

@@ -41,6 +41,11 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	wantParticipate := true
+	if req.WantParticipate != nil {
+		wantParticipate = *req.WantParticipate
+	}
+
 	input := dto.CreateEventInput{
 		Title:           req.Title,
 		Description:     req.Description,
@@ -50,6 +55,7 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		DrawDate:        req.DrawDate,
 		EndDate:         req.EndDate,
 		MaxParticipants: req.MaxParticipants,
+		WantParticipate: wantParticipate,
 	}
 
 	event, err := h.uc.Create(r.Context(), input, userID)
@@ -82,7 +88,13 @@ func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
-	events, err := h.uc.GetAll(r.Context())
+	userID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	events, err := h.uc.GetMyEvents(r.Context(), userID)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
@@ -169,6 +181,10 @@ func (h *EventHandler) CloseRegistration(w http.ResponseWriter, r *http.Request)
 
 func (h *EventHandler) StartDrawing(w http.ResponseWriter, r *http.Request) {
 	h.changeStatus(w, r, h.uc.StartDrawing)
+}
+
+func (h *EventHandler) ActivateEvent(w http.ResponseWriter, r *http.Request) {
+	h.changeStatus(w, r, h.uc.Activate)
 }
 
 func (h *EventHandler) FinishEvent(w http.ResponseWriter, r *http.Request) {

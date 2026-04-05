@@ -16,7 +16,7 @@ type Repository interface {
 	GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
 	GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.WishlistItem, error)
-	UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) error
+	UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string, price *float64) error
 	DeleteItem(ctx context.Context, itemID uuid.UUID) error
 }
 
@@ -26,4 +26,8 @@ type ParticipantRepository interface {
 
 type AssignmentRepository interface {
 	GetByEvent(ctx context.Context, eventID uuid.UUID) ([]entity.Assignment, error)
+}
+
+type FriendshipRepository interface {
+	GetByUsers(ctx context.Context, userA, userB uuid.UUID) (*entity.Friendship, error)
 }

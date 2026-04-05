@@ -11,6 +11,7 @@ type CreateEventRequest struct {
 	DrawDate        *time.Time `json:"drawDate"`
 	EndDate         time.Time  `json:"endDate" validate:"required"`
 	MaxParticipants int        `json:"maxParticipants" validate:"min=2"`
+	WantParticipate *bool      `json:"wantParticipate"`
 }
 
 type UpdateEventRequest struct {

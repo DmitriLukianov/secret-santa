@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS friendships;
 DROP TABLE IF EXISTS email_verification_codes;
 DROP TABLE IF EXISTS messages;
 DROP TABLE IF EXISTS invitations;

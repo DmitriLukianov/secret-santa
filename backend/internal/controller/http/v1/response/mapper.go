@@ -108,6 +108,7 @@ func WishlistItemToResponse(item *entity.WishlistItem) WishlistItemResponse {
 		Link:      item.Link,
 		ImageURL:  item.ImageURL,
 		Comment:   item.Comment,
+		Price:     item.Price,
 		CreatedAt: item.CreatedAt,
 	}
 }

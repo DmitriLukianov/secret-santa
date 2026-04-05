@@ -53,7 +53,7 @@ func (e Event) CanTransitionTo(newStatus definitions.EventStatus) bool {
 	case definitions.EventStatusInvitationOpen:
 		return newStatus == definitions.EventStatusRegistrationClosed || newStatus == definitions.EventStatusCancelled
 	case definitions.EventStatusRegistrationClosed:
-		return newStatus == definitions.EventStatusDrawingPending || newStatus == definitions.EventStatusDrawingDone || newStatus == definitions.EventStatusCancelled
+		return newStatus == definitions.EventStatusInvitationOpen || newStatus == definitions.EventStatusDrawingPending || newStatus == definitions.EventStatusDrawingDone || newStatus == definitions.EventStatusCancelled
 	case definitions.EventStatusDrawingPending:
 		return newStatus == definitions.EventStatusDrawingDone || newStatus == definitions.EventStatusCancelled
 	case definitions.EventStatusDrawingDone:

@@ -32,6 +32,7 @@ func scanWishlistItems(rows pgx.Rows) ([]entity.WishlistItem, error) {
 			&item.Link,
 			&item.ImageURL,
 			&item.Comment,
+			&item.Price,
 			&item.CreatedAt,
 		)
 		if err != nil {
@@ -51,6 +52,7 @@ func scanWishlistItem(row pgx.Row) (*entity.WishlistItem, error) {
 		&item.Link,
 		&item.ImageURL,
 		&item.Comment,
+		&item.Price,
 		&item.CreatedAt,
 	)
 	if err != nil {

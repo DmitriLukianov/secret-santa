@@ -46,8 +46,8 @@ func (r *Repository) Create(ctx context.Context, w entity.Wishlist) (entity.Wish
 
 func (r *Repository) CreateItem(ctx context.Context, item entity.WishlistItem) (entity.WishlistItem, error) {
 	query, args, err := createWishlistItemQuery().
-		Values(item.WishlistID, item.Title, item.Link, item.ImageURL, item.Comment).
-		Suffix("RETURNING id, wishlist_id, title, link, image_url, comment, created_at").
+		Values(item.WishlistID, item.Title, item.Link, item.ImageURL, item.Comment, item.Price).
+		Suffix("RETURNING id, wishlist_id, title, link, image_url, comment, price, created_at").
 		ToSql()
 
 	if err != nil {
@@ -88,13 +88,13 @@ func (r *Repository) GetItems(ctx context.Context, wishlistID uuid.UUID) ([]enti
 	return scanWishlistItems(rows)
 }
 
-func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) error {
+func (r *Repository) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string, price *float64) error {
 	query := updateWishlistItemQuery(itemID.String()).
 		Set("title", title).
 		Set("link", link).
 		Set("image_url", imageURL).
 		Set("comment", comment).
-		Set("updated_at", "NOW()") // добавили обновление updated_at
+		Set("price", price)
 
 	sql, args, err := query.ToSql()
 	if err != nil {

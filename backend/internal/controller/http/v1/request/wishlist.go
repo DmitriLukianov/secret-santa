@@ -6,15 +6,17 @@ type CreateWishlistRequest struct {
 }
 
 type CreateWishlistItemRequest struct {
-	Title    string `json:"title" validate:"required"`
-	Link     string `json:"link,omitempty"`
-	ImageURL string `json:"imageURL,omitempty"`
-	Comment  string `json:"comment,omitempty"`
+	Title    string   `json:"title" validate:"required"`
+	Link     string   `json:"link,omitempty"`
+	ImageURL string   `json:"imageURL,omitempty"`
+	Comment  string   `json:"comment,omitempty"`
+	Price    *float64 `json:"price,omitempty"`
 }
 
 type UpdateWishlistItemRequest struct {
-	Title    string `json:"title" validate:"required"`
-	Link     string `json:"link,omitempty"`
-	ImageURL string `json:"imageURL,omitempty"`
-	Comment  string `json:"comment,omitempty"`
+	Title    string   `json:"title" validate:"required"`
+	Link     string   `json:"link,omitempty"`
+	ImageURL string   `json:"imageURL,omitempty"`
+	Comment  string   `json:"comment,omitempty"`
+	Price    *float64 `json:"price,omitempty"`
 }

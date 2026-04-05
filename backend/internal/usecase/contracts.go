@@ -32,6 +32,7 @@ type EventUseCase interface {
 	OpenInvitation(ctx context.Context, id, userID uuid.UUID) error
 	CloseRegistration(ctx context.Context, id, userID uuid.UUID) error
 	StartDrawing(ctx context.Context, id, userID uuid.UUID) error
+	Activate(ctx context.Context, id, userID uuid.UUID) error
 	Finish(ctx context.Context, id, userID uuid.UUID) error
 	Cancel(ctx context.Context, id, userID uuid.UUID) error
 	GetMyEvents(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
@@ -50,12 +51,12 @@ type ParticipantUseCase interface {
 
 type WishlistUseCase interface {
 	Create(ctx context.Context, participantID uuid.UUID, visibility string) (entity.Wishlist, error)
-	AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error)
+	AddItem(ctx context.Context, wishlistID uuid.UUID, title string, link, imageURL, comment *string, price *float64) (entity.WishlistItem, error)
 	GetByParticipant(ctx context.Context, participantID uuid.UUID) (*entity.Wishlist, error)
 	GetItems(ctx context.Context, wishlistID uuid.UUID) ([]entity.WishlistItem, error)
 	GetForUser(ctx context.Context, eventID, participantID, requesterID uuid.UUID) (*entity.Wishlist, error)
 	GetItemByID(ctx context.Context, itemID uuid.UUID) (*entity.WishlistItem, error)
-	UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string) (entity.WishlistItem, error)
+	UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL, comment *string, price *float64) (entity.WishlistItem, error)
 	DeleteItem(ctx context.Context, itemID uuid.UUID) error
 	GetByID(ctx context.Context, wishlistID uuid.UUID) (*entity.Wishlist, error)
 }
@@ -68,6 +69,24 @@ type AssignmentUseCase interface {
 type InvitationUseCase interface {
 	GenerateInvite(ctx context.Context, input dto.CreateInvitationInput, organizerID uuid.UUID) (dto.InvitationResponse, error)
 	JoinByInvite(ctx context.Context, input dto.JoinByInvitationInput) error
+	SendEmailInvitation(ctx context.Context, input dto.CreateInvitationInput, organizerID uuid.UUID, recipientEmail string) (dto.InvitationResponse, error)
+}
+
+type NotificationUseCase interface {
+	Notify(ctx context.Context, userID uuid.UUID, notifType string, payload map[string]string) error
+	GetForUser(ctx context.Context, userID uuid.UUID) ([]entity.Notification, error)
+	MarkAsRead(ctx context.Context, id, userID uuid.UUID) error
+	MarkAllAsRead(ctx context.Context, userID uuid.UUID) error
+}
+
+type FriendshipUseCase interface {
+	SendRequest(ctx context.Context, requesterID, addresseeID uuid.UUID) (entity.Friendship, error)
+	AcceptRequest(ctx context.Context, friendshipID, userID uuid.UUID) error
+	DeclineRequest(ctx context.Context, friendshipID, userID uuid.UUID) error
+	RemoveFriend(ctx context.Context, friendshipID, userID uuid.UUID) error
+	GetFriends(ctx context.Context, userID uuid.UUID) ([]entity.Friendship, error)
+	GetPendingRequests(ctx context.Context, userID uuid.UUID) ([]entity.Friendship, error)
+	AreFriends(ctx context.Context, userA, userB uuid.UUID) (bool, error)
 }
 
 type ChatUseCase interface {
@@ -96,6 +115,7 @@ type EmailService interface {
 	SendLoginNotification(ctx context.Context, email, name string) error
 	SendOTP(ctx context.Context, email string) (string, error)
 	SendDrawNotification(ctx context.Context, email, eventTitle string) error
+	SendInvitationEmail(ctx context.Context, email, eventTitle, inviteURL string) error
 }
 
 type VerificationRepository interface {

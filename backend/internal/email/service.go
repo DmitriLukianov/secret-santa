@@ -53,6 +53,23 @@ func (s *Service) SendOTP(ctx context.Context, email string) (string, error) {
 	return code, nil
 }
 
+func (s *Service) SendInvitationEmail(ctx context.Context, email, eventTitle, inviteURL string) error {
+	subject := fmt.Sprintf("🎅 Приглашение в Тайный Санта: %s", eventTitle)
+	body := fmt.Sprintf(`Привет!
+
+Вас приглашают принять участие в событии «%s» в Тайном Санте.
+
+Чтобы присоединиться, перейдите по ссылке:
+%s
+
+Ссылка действительна ограниченное время.
+
+С наилучшими пожеланиями,
+Команда Тайный Санта`, eventTitle, inviteURL)
+
+	return s.send(ctx, email, subject, body)
+}
+
 func (s *Service) SendDrawNotification(ctx context.Context, email, eventTitle string) error {
 	subject := "🎲 Жеребьёвка проведена!"
 	body := fmt.Sprintf(`Привет!

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -25,29 +26,38 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "missing authorization header", http.StatusUnauthorized)
+			writeJSONUnauthorized(w, "missing authorization header")
 			return
 		}
 
 		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenStr == authHeader {
-			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
+			writeJSONUnauthorized(w, "invalid authorization header format")
 			return
 		}
 
 		claims, err := m.jwtManager.ParseToken(tokenStr)
 		if err != nil {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
+			writeJSONUnauthorized(w, "invalid token")
 			return
 		}
 
 		userID, err := uuid.Parse(claims.UserID)
 		if err != nil {
-			http.Error(w, "invalid user id in token", http.StatusUnauthorized)
+			writeJSONUnauthorized(w, "invalid user id in token")
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), definitions.UserIDKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func writeJSONUnauthorized(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": msg,
+		"code":  http.StatusUnauthorized,
 	})
 }

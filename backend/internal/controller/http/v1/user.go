@@ -127,6 +127,18 @@ func (h *UserHandler) GetUserByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
+	// Support ?email= for searching a user by email
+	if email := r.URL.Query().Get("email"); email != "" {
+		user, err := h.uc.GetByEmail(r.Context(), email)
+		if err != nil {
+			response.WriteHTTPError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]interface{}{response.UserToResponse(user)})
+		return
+	}
+
 	users, err := h.uc.GetAll(r.Context())
 	if err != nil {
 		response.WriteHTTPError(w, err)

@@ -13,7 +13,9 @@ import (
 	assignmentrepo "secret-santa-backend/internal/repository/postgres/assignment"
 	chatrepo "secret-santa-backend/internal/repository/postgres/chat"
 	eventrepo "secret-santa-backend/internal/repository/postgres/event"
+	friendshiprepo "secret-santa-backend/internal/repository/postgres/friendship"
 	invitationrepo "secret-santa-backend/internal/repository/postgres/invitation"
+	notificationrepo "secret-santa-backend/internal/repository/postgres/notification"
 	participantrepo "secret-santa-backend/internal/repository/postgres/participant"
 	userrepo "secret-santa-backend/internal/repository/postgres/user"
 	verificationrepo "secret-santa-backend/internal/repository/postgres/verification"
@@ -23,7 +25,9 @@ import (
 	authusecase "secret-santa-backend/internal/usecase/auth"
 	chatusecase "secret-santa-backend/internal/usecase/chat"
 	eventusecase "secret-santa-backend/internal/usecase/event"
+	friendshipusecase "secret-santa-backend/internal/usecase/friendship"
 	invitationusecase "secret-santa-backend/internal/usecase/invitation"
+	notificationusecase "secret-santa-backend/internal/usecase/notification"
 	participantusecase "secret-santa-backend/internal/usecase/participant"
 	userusecase "secret-santa-backend/internal/usecase/user"
 	wishlistusecase "secret-santa-backend/internal/usecase/wishlist"
@@ -55,6 +59,7 @@ func New() *App {
 	invitationRepo := invitationrepo.New(db)
 	chatRepo := chatrepo.New(db)
 	verificationRepo := verificationrepo.New(db)
+	friendshipRepo := friendshiprepo.New(db)
 
 	userUC := userusecase.NewWithLogger(userRepo, log)
 	emailService := email.New(cfg, log)
@@ -64,9 +69,17 @@ func New() *App {
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
 	participantUC := participantusecase.NewWithLogger(participantRepo, log)
 	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, userUC, emailService, log)
-	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
-	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, cfg.AppBaseURL, log)
+	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, friendshipRepo, log)
+	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, emailService, cfg.AppBaseURL, log)
 	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log)
+
+	notificationRepo := notificationrepo.New(db)
+	friendshipUC := friendshipusecase.New(friendshipRepo)
+	notificationUC := notificationusecase.NewWithLogger(notificationRepo, log)
+
+	assignmentUC.SetNotificationUC(notificationUC)
+	participantUC.SetNotificationUC(notificationUC)
+	invitationUC.SetNotificationUC(notificationUC)
 
 	userHandler := v1.NewUserHandler(userUC, eventUC)
 	eventHandler := v1.NewEventHandler(eventUC)
@@ -75,6 +88,8 @@ func New() *App {
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	invitationHandler := v1.NewInvitationHandler(invitationUC)
 	chatHandler := v1.NewChatHandler(chatUC)
+	friendshipHandler := v1.NewFriendshipHandler(friendshipUC)
+	notificationHandler := v1.NewNotificationHandler(notificationUC)
 
 	jwtManager, err := oauth.NewJWTManager(cfg.JWTSecret, cfg.JWTTTL)
 	if err != nil {
@@ -88,7 +103,7 @@ func New() *App {
 		panic(err)
 	}
 
-	authHandler := v1.NewAuthHandler(authProvider, jwtManager, authUC)
+	authHandler := v1.NewAuthHandler(authProvider, jwtManager, authUC, cfg.FrontendURL)
 
 	router := v1.NewRouter(
 		authHandler,
@@ -99,6 +114,8 @@ func New() *App {
 		wishlistHandler,
 		invitationHandler,
 		chatHandler,
+		friendshipHandler,
+		notificationHandler,
 		jwtManager,
 		log,
 	)

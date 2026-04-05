@@ -20,7 +20,12 @@ type UseCase struct {
 	eventRepo       EventRepository
 	userUC          usecase.UserUseCase
 	emailService    usecase.EmailService
+	notificationUC  usecase.NotificationUseCase
 	log             *slog.Logger
+}
+
+func (uc *UseCase) SetNotificationUC(notificationUC usecase.NotificationUseCase) {
+	uc.notificationUC = notificationUC
 }
 
 func New(repo Repository, participantRepo ParticipantRepository, eventRepo EventRepository, userUC usecase.UserUseCase) *UseCase {
@@ -101,33 +106,49 @@ func (uc *UseCase) Draw(ctx context.Context, eventID, userID uuid.UUID) error {
 		return fmt.Errorf("failed to execute draw transaction: %w", err)
 	}
 
+	// Send emails in background to avoid blocking the request (SMTP can be slow)
 	if uc.emailService != nil && uc.userUC != nil {
-		notified := 0
+		emailService := uc.emailService
+		userUC := uc.userUC
+		log := uc.log
+		eventTitle := eventPtr.Title
+		go func() {
+			notified := 0
+			for _, p := range participants {
+				userPtr, err := userUC.GetByID(context.Background(), p.UserID)
+				if err != nil || userPtr == nil {
+					if log != nil {
+						log.Warn("failed to resolve participant for draw notification",
+							slog.String("user_id", p.UserID.String()),
+							slog.String("error", fmt.Sprint(err)),
+						)
+					}
+					continue
+				}
+				if err := emailService.SendDrawNotification(context.Background(), userPtr.Email, eventTitle); err != nil {
+					if log != nil {
+						log.Warn("failed to send draw notification",
+							slog.String("user_id", userPtr.ID.String()),
+							slog.String("email", userPtr.Email),
+							slog.String("error", err.Error()),
+						)
+					}
+					continue
+				}
+				notified++
+			}
+			if log != nil {
+				log.Info("draw notifications sent", slog.Int("notified_users", notified))
+			}
+		}()
+	}
+
+	if uc.notificationUC != nil {
 		for _, p := range participants {
-			userPtr, err := uc.userUC.GetByID(ctx, p.UserID)
-			if err != nil || userPtr == nil {
-				if uc.log != nil {
-					uc.log.Warn("failed to resolve participant for draw notification",
-						slog.String("user_id", p.UserID.String()),
-						slog.String("error", fmt.Sprint(err)),
-					)
-				}
-				continue
-			}
-			if err := uc.emailService.SendDrawNotification(ctx, userPtr.Email, eventPtr.Title); err != nil {
-				if uc.log != nil {
-					uc.log.Warn("failed to send draw notification",
-						slog.String("user_id", userPtr.ID.String()),
-						slog.String("email", userPtr.Email),
-						slog.String("error", err.Error()),
-					)
-				}
-				continue
-			}
-			notified++
-		}
-		if uc.log != nil {
-			uc.log.Info("draw notifications sent", slog.Int("notified_users", notified))
+			_ = uc.notificationUC.Notify(ctx, p.UserID, "draw_done", map[string]string{
+				"event_id":    eventID.String(),
+				"event_title": eventPtr.Title,
+			})
 		}
 	}
 

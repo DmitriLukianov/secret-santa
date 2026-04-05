@@ -16,5 +16,6 @@ type WishlistItemResponse struct {
 	Link      *string   `json:"link"`
 	ImageURL  *string   `json:"imageUrl"`
 	Comment   *string   `json:"comment"`
+	Price     *float64  `json:"price"`
 	CreatedAt time.Time `json:"createdAt"`
 }
