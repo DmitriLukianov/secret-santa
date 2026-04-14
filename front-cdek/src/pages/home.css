@@ -1,0 +1,698 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: PT Sans, sans-serif;
+}
+html {
+    scroll-behavior: smooth;
+}
+
+/*  ФОН ВСЕЙ СТРАНИЦЫ  */
+.app {
+  background-image: url('/background.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+body {
+  background-image: url('/background.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+/*  ДЕКОРАТИВНЫЕ ЭЛЕМЕНТЫ  */
+.decoration {
+  position: absolute;
+  z-index: 2;       /* Поверх контента, но под текстом секций */
+  pointer-events: none; /* Картинки не мешают кликам */
+  user-select: none;
+}
+
+/* Печенье — правый верхний угол секции "Правила" */
+.cookie {
+  top: 10px;
+  right: 50px;
+  width: 150px;
+  height: auto;
+  transform: rotate(12deg);
+  /* Анимация лёгкого покачивания */
+  animation: float 5s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(3deg); }
+}
+
+/* Гирлянда — между секциями */
+.garland {
+  position: relative; 
+  display: block;
+  width: 100%;
+  /* max-width: 1200px; */
+  margin: 0 auto 7px;
+  height: auto;
+  opacity: 0.9;
+}
+
+/* Санта — привязан к левому верхнему краю подвала */
+.santa {
+  position: absolute;    /* ← Позиционируем относительно .footer */
+  bottom: 100%;          /* ← Низ картинки = верх футера */
+  left: 0;               /* ← Прижат к левому краю */
+  width: 130px;          /* ← Размер картинки */
+  height: auto;
+  z-index: 2;            /* Поверх контента футера */
+  pointer-events: none;  /* Не мешает кликам */
+  /* Опционально: чуть «выглядывает» вверх */
+  transform: translateY(5%);
+}
+
+/* Адаптивность: на мобильных уменьшаем декорации */
+@media (max-width: 732px) {
+  .cookie {
+    width: 70px;
+    top: 10px;
+    right: 15px;
+  }
+  s
+  .garland {
+    max-width: 100%;
+    margin-bottom: 7px;
+  }
+  
+  .santa {
+    width: 100px;
+    z-index: 2; 
+    transform: translateY(20%);
+  }
+}
+
+  
+/*  HEADER */
+.header {
+  background: white;
+  padding: 12px 20px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+.header-left,
+.header-right {
+    display: flex;
+    gap: 100px;  
+    align-items: center;
+    z-index: 101;
+}
+
+.header nav {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: center; 
+  align-items: center;
+  gap: 100px;                
+  position: relative;
+  min-height: 50px;
+  flex-wrap: wrap;          
+}
+
+/* Ссылки  */
+.header a {
+  text-decoration: none;
+  color: #1E1E1E;
+  font-weight: 500;
+  font-size: 16px;
+  transition: color 0.3s;
+  white-space: nowrap;
+}
+.header a:hover { color: #44E858; }
+
+/* Логотип */
+.logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 102;
+  text-decoration: none;
+}
+.logo-img {
+  height: 30px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+.logo-fallback {
+  color: #44E858;
+  font-weight: bold;
+  font-size: 24px;
+  display: none;
+  white-space: nowrap;
+}
+
+/* Бургер */
+.burger-menu {
+    display: none;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 28px;
+    height: 20px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    z-index: 103;
+    order: 1;
+}
+
+.burger-menu span {
+    display: block;
+    width: 100%;
+    height: 3px;
+    background: #44E858; 
+    border-radius: 2px;
+    transition: all 0.3s ease;
+}
+
+.burger-menu.active span:nth-child(1) {
+    transform: translateY(8px) rotate(45deg);
+}
+.burger-menu.active span:nth-child(2) { opacity: 0; }
+.burger-menu.active span:nth-child(3) {
+    transform: translateY(-8px) rotate(-45deg);
+}
+
+.burger-menu.active span:nth-child(1) {
+  transform: translateY(8px) rotate(45deg);
+  background: #44E858;
+}
+.burger-menu.active span:nth-child(2) { opacity: 0; }
+.burger-menu.active span:nth-child(3) {
+  transform: translateY(-8px) rotate(-45deg);
+  background: #44E858;
+}
+
+/* HERO */
+.hero {
+  text-align: center;
+  padding: 400px 50px 500px;
+  /* Локальный фон */
+  background-image: url('/bg_hero.png');
+  background-size: cover;
+  background-position: center 85%;
+  background-repeat: no-repeat;
+  position: relative;
+}
+
+.hero h1, .hero p, .hero button {
+    position: relative;
+    z-index: 1;
+}
+
+.hero h1 {
+    margin-top: -330px;
+    font-size: 35px;
+    font-weight: 900;
+    margin-bottom: 16px;
+    color: #1E1E1E;
+    letter-spacing: -0.5px;
+    text-transform: uppercase;
+}
+
+.hero p {
+    max-width: 800px;
+    margin: 0 auto 30px;
+    font-size: 17.5px;
+    color: #757575;
+    line-height: 1.5;
+}
+
+.hero button {
+    padding: 14px 42px;
+    border: none;
+    background: #1E1E1E;
+    color: white;
+    cursor: pointer;
+    border-radius: 14px;
+    font-size: 17.5px;
+    font-weight: 600;
+    transition: transform 0.2s, background 0.3s;
+    min-width: 220px;
+}
+
+.hero button:hover {
+    background: #333;
+    transform: translateY(-2px);
+}
+
+/* ADVANTAGES */
+.advantages {
+    padding: 80px 20px;
+}
+
+.advantages h2, .advantages .cards {
+    position: relative;
+    z-index: 1;
+}
+
+.advantages h2 {
+    font-size: 28px;
+    font-weight: 900;
+    margin-bottom: 20px;
+    color: #1E1E1E;
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.cards {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 24px;
+    margin-top: 50px;
+    flex-wrap: wrap;
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Карточки */
+.card {
+    border: 2px solid #44E858;
+    padding: 40px 24px;
+    border-radius: 14px;
+    width: 320px;
+    background: white;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 25px rgba(68, 232, 88, 0.2);
+}
+
+.card i {
+    font-size: 48px;
+    color: #44E858;
+    transition: transform 0.3s ease;
+}
+
+.card:hover i {
+    transform: scale(1.1);
+}
+
+.card h3 {
+    font-size: 21px;
+    font-weight: 700;
+    margin: 0;
+    color: #1E1E1E;
+    transition: color 0.3s ease;
+    text-transform: uppercase;
+}
+
+.card:hover h3 {
+    color: #44E858;
+}
+
+.card p {
+    font-size: 17.5px;
+    color: #757575;
+    line-height: 1.5;
+    margin: 0;
+}
+
+/* RULES */
+.rules {
+    padding: 80px 20px;
+}
+
+.rules h2, .rules ul, .rules button {
+    position: relative;
+    z-index: 1;
+}
+
+.rules h2 {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 900;
+    margin-bottom: 50px;
+    color: #1E1E1E;
+    text-transform: uppercase;
+}
+
+.rules ul {
+    list-style: none;
+    max-width: 800px;
+    margin: 0 auto 20px;
+    padding: 0;
+}
+
+.rules li {
+    margin: 20px 0;
+    padding-left: 32px;
+    position: relative;
+    font-size: 17.5px;
+    color: #333;
+}
+
+.rules li::before {
+    content: "»";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: #44E858;
+    font-weight: bold;
+    font-size: 30px;
+    line-height: 1;
+}
+
+.rules li strong {
+    display: block;
+    font-size: 21px;
+    margin-bottom: 7px;
+    color: #1E1E1E;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.rules li span {
+    display: block;
+    font-size: 17.5px;
+    color: #757575;
+    line-height: 1.5;
+}
+
+.rules button {
+    display: block;
+    margin: 40px auto 0;
+    padding: 14px 42px;
+    border: none;
+    background: #1E1E1E;
+    color: white;
+    cursor: pointer;
+    border-radius: 14px;
+    font-size: 17.5px;
+    font-weight: 600;
+    transition: transform 0.2s, background 0.3s;
+    min-width: 220px;
+}
+
+.rules button:hover {
+    background: #757575;
+    transform: translateY(-2px);
+}
+
+/* FAQ */
+.faq {
+    padding: 80px 20px;
+}
+
+.faq h2, .faq-list, .faq .footer-button {
+    position: relative;
+    z-index: 1;
+}
+
+.faq h2 {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 900;
+    margin-bottom: 20px;
+    color: #1E1E1E;
+    text-transform: uppercase;
+}
+
+.faq-list {
+    max-width: 800px;
+    margin: 0 auto 20px;
+}
+
+.faq-item {
+    margin: 0 auto 12px;
+    background: white;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+}
+
+.faq-item summary {
+    padding: 20px 24px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 21px;
+    color: #1E1E1E;
+    position: relative;
+    list-style: none;
+    transition: background 0.3s;
+    text-transform: none;
+}
+
+.faq-item summary:hover {
+    background: #f8fff8;
+}
+
+.faq-item summary::-webkit-details-marker {
+    display: none;
+}
+
+.faq-item summary::after {
+    content: "›";
+    position: absolute;
+    right: 24px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 28px;
+    color: #44E858;
+    transition: transform 0.3s;
+}
+
+.faq-item[open] summary::after {
+    transform: translateY(-50%) rotate(90deg);
+}
+
+.faq-item p {
+    padding: 0 24px 20px 24px;
+    color: #757575;
+    line-height: 1.6;
+    font-size: 17.5px;
+}
+
+.faq .footer-button {
+    display: block;
+    margin: 20px auto 0;
+    padding: 14px 42px;
+    background: #1E1E1E;
+    color: white;
+    border: none;
+    border-radius: 14px;
+    font-weight: 600;
+    font-size: 17.5px;
+    cursor: pointer;
+    transition: transform 0.2s, background 0.3s;
+    min-width: 220px;
+}
+
+.faq .footer-button:hover {
+    background: #333;
+    transform: translateY(-2px);
+}
+
+/* FOOTER */
+.rules,
+.footer {
+  position: relative;
+}
+.footer {
+    background: #000000;
+    color: white;
+    padding: 60px 20px 30px;
+    text-align: center;
+    position: relative;  /* ← Обязательно для позиционирования Санты */
+    z-index: 1;  
+}
+
+.footer-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 40px;
+    text-align: left;
+}
+
+.footer-section {
+    flex: 1;
+    min-width: 200px;
+}
+
+.footer-section h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: white;
+    text-transform: uppercase;
+}
+
+.footer-section p,
+.footer-section a {
+    font-size: 14px;
+    color: #999;
+    line-height: 1.8;
+    text-decoration: none;
+    display: block;
+}
+
+.footer-section a:hover {
+    color: #44E858;
+}
+
+.footer-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.footer-logo-img {
+    height: 30px;
+    width: auto;
+    object-fit: contain;
+}
+
+.footer-bottom {
+    max-width: 1200px;
+    margin: 40px auto 0;
+    padding-top: 20px;
+    border-top: 1px solid #222;
+    text-align: center;
+    color: #666;
+    font-size: 12px;
+}
+
+.mobile-nav {
+    position: fixed;           
+    top: 60px;               
+    left: 20px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+    padding: 8px 0;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 999;            
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+    pointer-events: none;       
+}
+
+.mobile-nav.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;     
+}
+
+.mobile-nav a {
+    text-decoration: none;
+    color: #1E1E1E;
+    font-weight: 500;
+    font-size: 15px;
+    padding: 10px 16px;
+    transition: background 0.2s, color 0.2s;
+    white-space: nowrap;
+}
+
+.mobile-nav a:hover {
+    background: #f8fff8;
+    color: #44E858;
+}
+
+.mobile-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100vh;
+    background: transparent;
+    z-index: 998;
+    cursor: default;           
+}
+
+
+/* АДАПТИВНОСТЬ */
+
+@media (max-width: 732px) {
+    .header {
+        padding: 12px 15px;
+    }
+    
+    .header nav {
+        max-width: 100%;
+        justify-content: center; 
+        position: relative;
+        padding: 0 40px; 
+    }
+    
+    .header-left,
+    .header-right {
+        display: none !important;
+    }
+    
+    .burger-menu {
+        display: flex;
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        order: 1;
+    }
+    
+    .logo {
+        position: static;
+        transform: none;
+        margin: 0;
+        order: 2;
+    }
+ 
+    .hero { padding: 180px 15px 220px; background-position: center 80%; }
+    .hero h1 { font-size: 24px; margin-top: -140px; }
+    .hero p { font-size: 14px; }
+    .hero button { padding: 10px 18px; font-size: 15px; min-width: 100px; width: 30%; max-width: 260px; }
+    
+    .advantages { padding: 10px 30px; }
+    .advantages h2 { font-size: 22px; }
+    .cards { flex-direction: column; }
+    .card { width: 100%; max-width: 300px; padding: 18px 7px; }
+    
+    .rules { padding: 50px 20px; background-position: center 30%; }
+    .rules h2 { font-size: 22px; }
+    .rules li { font-size: 14px; padding-left: 44px; }
+    .rules button { padding: 10px 18px; font-size: 15px; min-width: 100px; width: 30%; max-width: 260px; }
+    
+    .faq { padding: 50px 15px; background-position: center 10%; }
+    .faq h2 { font-size: 22px; }
+    .faq-item summary { font-size: 16px; padding: 16px 18px; }
+    .faq-item p { font-size: 14px; padding: 0 18px 16px 18px; }
+    .faq .footer-button { padding: 10px 18px; font-size: 15px; min-width: 100px; width: 30%; max-width: 260px; }
+    
+    .footer { padding: 30px 10px 20px; }
+    .footer-content {  display: grid; grid-template-columns: 1fr 1fr; gap: 24px 16px; text-align: center; align-items: start; }
+    .footer-logo { justify-content: center; }
+    .footer-section { min-width: auto; }
+    .footer-bottom { font-size: 11px; }
+}
+   

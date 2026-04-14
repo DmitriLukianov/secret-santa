@@ -1,0 +1,16 @@
+# Секреты
+.env
+backend/.env
+
+# Go
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Node
+front-cdek/node_modules
+front-cdek/dist
+
+# IDE
+.idea
+.vscode
+.DS_Store
