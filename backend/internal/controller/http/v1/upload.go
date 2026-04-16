@@ -44,7 +44,6 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Определяем MIME-тип по содержимому файла
 	buf := make([]byte, 512)
 	if _, err := file.Read(buf); err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)

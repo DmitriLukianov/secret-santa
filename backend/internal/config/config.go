@@ -10,28 +10,22 @@ import (
 )
 
 type Config struct {
-	AppPort    string `env:"APP_PORT" envDefault:"8080"`
-	AppEnv     string `env:"APP_ENV" envDefault:"local"`
-	LogLevel   string `env:"LOG_LEVEL" envDefault:"info"`
+	AppPort     string `env:"APP_PORT" envDefault:"8080"`
+	AppEnv      string `env:"APP_ENV" envDefault:"local"`
+	LogLevel    string `env:"LOG_LEVEL" envDefault:"info"`
 	AppBaseURL  string `env:"APP_BASE_URL" envDefault:"http://localhost:8080"`
 	FrontendURL string `env:"FRONTEND_URL" envDefault:"http://localhost:5173"`
 
-	// CORSOrigins — список разрешённых источников через запятую.
-	// Пример: "https://myapp.com,https://www.myapp.com"
-	// По умолчанию разрешает localhost для разработки.
 	CORSOrigins string `env:"CORS_ORIGINS" envDefault:"http://localhost:5173,http://localhost:3000"`
 
 	DatabaseURL string `env:"DATABASE_URL"`
 
-	// Настройки пула соединений БД
-	DBMaxConns     int `env:"DB_MAX_CONNS" envDefault:"25"`
-	DBMinConns     int `env:"DB_MIN_CONNS" envDefault:"5"`
+	DBMaxConns int `env:"DB_MAX_CONNS" envDefault:"25"`
+	DBMinConns int `env:"DB_MIN_CONNS" envDefault:"5"`
 
 	JWTSecret string        `env:"JWT_SECRET"`
 	JWTTTL    time.Duration `env:"JWT_TTL" envDefault:"24h"`
 
-	// SMTP — опциональный. Если не задан, email-уведомления отключаются.
-	// Сервис стартует без них. Проверяй через cfg.SMTPEnabled().
 	SMTPHost     string `env:"SMTP_HOST" envDefault:"smtp.mail.ru"`
 	SMTPPort     int    `env:"SMTP_PORT" envDefault:"587"`
 	SMTPUsername string `env:"SMTP_USERNAME"`
@@ -43,29 +37,21 @@ type Config struct {
 	GithubClientSecret string `env:"GITHUB_CLIENT_SECRET"`
 	GithubRedirectURL  string `env:"GITHUB_REDIRECT_URL"`
 
-	// UploadDir — директория для загружаемых файлов.
 	UploadDir string `env:"UPLOAD_DIR" envDefault:"./uploads"`
 
-	// MaxRequestBodySize — максимальный размер тела запроса (байты), кроме загрузки файлов.
-	MaxRequestBodySize int64 `env:"MAX_REQUEST_BODY_SIZE" envDefault:"1048576"` // 1 MB
+	MaxRequestBodySize int64 `env:"MAX_REQUEST_BODY_SIZE" envDefault:"1048576"`
 
-	// OTPLength — длина OTP-кода.
 	OTPLength int `env:"OTP_LENGTH" envDefault:"6"`
 
-	// OTPExpiryMinutes — время жизни OTP-кода в минутах.
 	OTPExpiryMinutes int `env:"OTP_EXPIRY_MINUTES" envDefault:"10"`
 
-	// RateLimitOTPPerHour — максимальное число запросов OTP с одного email в час.
 	RateLimitOTPPerHour int `env:"RATE_LIMIT_OTP_PER_HOUR" envDefault:"5"`
 }
 
-// SMTPEnabled возвращает true если все необходимые SMTP-переменные заданы.
-// Используй это перед отправкой писем вместо падения сервиса.
 func (c *Config) SMTPEnabled() bool {
 	return c.SMTPHost != "" && c.SMTPUsername != "" && c.SMTPPassword != "" && c.FromEmail != ""
 }
 
-// CORSOriginsSlice возвращает список разрешённых CORS-источников.
 func (c *Config) CORSOriginsSlice() []string {
 	var origins []string
 	for _, o := range splitAndTrim(c.CORSOrigins) {
@@ -119,9 +105,9 @@ func Load() *Config {
 	}
 
 	cfg := &Config{
-		AppPort:    getEnv("APP_PORT", "8080"),
-		AppEnv:     getEnv("APP_ENV", "local"),
-		LogLevel:   getEnv("LOG_LEVEL", "info"),
+		AppPort:     getEnv("APP_PORT", "8080"),
+		AppEnv:      getEnv("APP_ENV", "local"),
+		LogLevel:    getEnv("LOG_LEVEL", "info"),
 		AppBaseURL:  getEnv("APP_BASE_URL", "http://localhost:8080"),
 		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:5173"),
 
@@ -146,10 +132,10 @@ func Load() *Config {
 		GithubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
 		GithubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", ""),
 
-		UploadDir:          getEnv("UPLOAD_DIR", "./uploads"),
-		MaxRequestBodySize: getInt64Env("MAX_REQUEST_BODY_SIZE", 1<<20),
-		OTPLength:          getIntEnv("OTP_LENGTH", 6),
-		OTPExpiryMinutes:   getIntEnv("OTP_EXPIRY_MINUTES", 10),
+		UploadDir:           getEnv("UPLOAD_DIR", "./uploads"),
+		MaxRequestBodySize:  getInt64Env("MAX_REQUEST_BODY_SIZE", 1<<20),
+		OTPLength:           getIntEnv("OTP_LENGTH", 6),
+		OTPExpiryMinutes:    getIntEnv("OTP_EXPIRY_MINUTES", 10),
 		RateLimitOTPPerHour: getIntEnv("RATE_LIMIT_OTP_PER_HOUR", 5),
 	}
 

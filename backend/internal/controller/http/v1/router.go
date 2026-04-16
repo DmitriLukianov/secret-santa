@@ -57,7 +57,6 @@ func NewRouter(
 		r.Route("/auth", func(r chi.Router) {
 			r.Get("/login", authHandler.Login)
 			r.Get("/callback", authHandler.Callback)
-			// OTP-эндпоинты защищены rate limiter'ом
 			r.With(middleware.OTPRateLimitMiddleware(otpLimiter)).Post("/send-otp", authHandler.SendOTP)
 			r.With(middleware.OTPRateLimitMiddleware(otpLimiter)).Post("/verify-otp", authHandler.VerifyOTP)
 		})
