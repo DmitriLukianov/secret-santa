@@ -24,7 +24,7 @@ migrate-down:
 		down 1
 
 db-clean:
-	docker exec backend_front-postgres-1 psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} -c \
+	docker compose exec postgres psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} -c \
 		"TRUNCATE users, events, participants, assignments, invitations, wishlists, wishlist_items, messages, email_verification_codes RESTART IDENTITY CASCADE;"
 
 db-reset:

@@ -3,6 +3,7 @@ package participant
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
@@ -14,6 +15,7 @@ import (
 type UseCase struct {
 	repo      Repository
 	eventRepo EventRepository
+	drawUC    DrawUseCase
 	log       *slog.Logger
 }
 
@@ -23,6 +25,10 @@ func New(repo Repository, eventRepo EventRepository) *UseCase {
 
 func NewWithLogger(repo Repository, eventRepo EventRepository, log *slog.Logger) *UseCase {
 	return &UseCase{repo: repo, eventRepo: eventRepo, log: log}
+}
+
+func (uc *UseCase) SetDrawUseCase(drawUC DrawUseCase) {
+	uc.drawUC = drawUC
 }
 
 func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role string) (entity.Participant, error) {
@@ -62,6 +68,22 @@ func (uc *UseCase) Create(ctx context.Context, eventID, userID uuid.UUID, role s
 			slog.String("participant_id", created.ID.String()),
 		)
 	}
+
+	// Если дата жеребьёвки уже прошла — попробовать провести жеребьёвку сразу
+	if uc.drawUC != nil && event.DrawDate != nil && time.Now().After(*event.DrawDate) {
+		drawUC := uc.drawUC
+		log := uc.log
+		go func() {
+			if err := drawUC.AutoDraw(context.Background(), eventID); err != nil {
+				if log != nil {
+					log.Info("instant draw after join: not enough participants yet",
+						slog.String("event_id", eventID.String()),
+					)
+				}
+			}
+		}()
+	}
+
 	return created, nil
 }
 

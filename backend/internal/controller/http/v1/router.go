@@ -2,7 +2,6 @@ package v1
 
 import (
 	"log/slog"
-	"net/http"
 	"time"
 
 	"secret-santa-backend/internal/config"
@@ -50,10 +49,7 @@ func NewRouter(
 
 	router.Mount("/health", newHealthHandler(db))
 
-	// Раздача загруженных файлов
-	router.Handle("/static/uploads/*", http.StripPrefix("/static/uploads/", http.FileServer(http.Dir(cfg.UploadDir))))
-
-	router.Route("/api/v1", func(r chi.Router) {
+router.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Get("/login", authHandler.Login)
 			r.Get("/callback", authHandler.Callback)
@@ -79,6 +75,7 @@ func NewRouter(
 
 				r.Post("/{eventId}/participants", participantHandler.Add)
 				r.Get("/{eventId}/participants", participantHandler.GetByEvent)
+				r.Get("/{eventId}/participants/me", participantHandler.GetMe)
 
 				r.Post("/{eventId}/assign", assignmentHandler.Draw)
 				r.Get("/{eventId}/assignments", assignmentHandler.GetByEvent)

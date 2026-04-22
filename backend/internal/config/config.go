@@ -37,7 +37,12 @@ type Config struct {
 	GithubClientSecret string `env:"GITHUB_CLIENT_SECRET"`
 	GithubRedirectURL  string `env:"GITHUB_REDIRECT_URL"`
 
-	UploadDir string `env:"UPLOAD_DIR" envDefault:"./uploads"`
+	// Yandex Cloud Object Storage (S3-compatible).
+	S3Bucket    string `env:"S3_BUCKET"`
+	S3Region    string `env:"S3_REGION" envDefault:"ru-central1"`
+	S3Endpoint  string `env:"S3_ENDPOINT" envDefault:"https://storage.yandexcloud.net"`
+	S3AccessKey string `env:"S3_ACCESS_KEY_ID"`
+	S3SecretKey string `env:"S3_SECRET_ACCESS_KEY"`
 
 	MaxRequestBodySize int64 `env:"MAX_REQUEST_BODY_SIZE" envDefault:"1048576"`
 
@@ -46,6 +51,10 @@ type Config struct {
 	OTPExpiryMinutes int `env:"OTP_EXPIRY_MINUTES" envDefault:"10"`
 
 	RateLimitOTPPerHour int `env:"RATE_LIMIT_OTP_PER_HOUR" envDefault:"5"`
+}
+
+func (c *Config) S3Enabled() bool {
+	return c.S3Bucket != "" && c.S3AccessKey != "" && c.S3SecretKey != ""
 }
 
 func (c *Config) SMTPEnabled() bool {
@@ -132,7 +141,11 @@ func Load() *Config {
 		GithubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
 		GithubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", ""),
 
-		UploadDir:           getEnv("UPLOAD_DIR", "./uploads"),
+		S3Bucket:    getEnv("S3_BUCKET", ""),
+		S3Region:    getEnv("S3_REGION", "ru-central1"),
+		S3Endpoint:  getEnv("S3_ENDPOINT", "https://storage.yandexcloud.net"),
+		S3AccessKey: getEnv("S3_ACCESS_KEY_ID", ""),
+		S3SecretKey: getEnv("S3_SECRET_ACCESS_KEY", ""),
 		MaxRequestBodySize:  getInt64Env("MAX_REQUEST_BODY_SIZE", 1<<20),
 		OTPLength:           getIntEnv("OTP_LENGTH", 6),
 		OTPExpiryMinutes:    getIntEnv("OTP_EXPIRY_MINUTES", 10),

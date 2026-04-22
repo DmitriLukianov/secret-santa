@@ -100,6 +100,22 @@ func (s *Service) SendDrawNotification(ctx context.Context, email, eventTitle st
 	return s.send(ctx, email, subject, body)
 }
 
+func (s *Service) SendDrawFailedNotification(ctx context.Context, email, eventTitle string, participantCount int) error {
+	subject := fmt.Sprintf("⚠️ Жеребьёвка не состоялась: %s", eventTitle)
+	body := fmt.Sprintf(`Привет!
+
+К сожалению, автоматическая жеребьёвка для события «%s» не состоялась.
+
+Причина: недостаточно участников (%d). Для проведения жеребьёвки необходимо минимум 3 участника.
+
+Пригласите больше участников и жеребьёвка пройдёт автоматически при следующей проверке.
+
+С наилучшими пожеланиями,
+Команда Тайный Санта`, eventTitle, participantCount)
+
+	return s.send(ctx, email, subject, body)
+}
+
 func (s *Service) generateOTP() string {
 	const digits = "0123456789"
 	length := s.cfg.OTPLength

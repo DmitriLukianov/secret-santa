@@ -1,14 +1,13 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
+	imgopt "secret-santa-backend/internal/image"
 	"secret-santa-backend/internal/controller/http/v1/response"
 	"secret-santa-backend/internal/definitions"
 
@@ -17,16 +16,17 @@ import (
 
 const maxUploadSize = 5 << 20 // 5 MB
 
-type UploadHandler struct {
-	baseURL   string
-	uploadDir string
+// FileStorage is satisfied by *storage.S3.
+type FileStorage interface {
+	Upload(ctx context.Context, key string, data []byte, contentType string) (string, error)
 }
 
-func NewUploadHandler(baseURL, uploadDir string) *UploadHandler {
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		panic(fmt.Sprintf("failed to create upload directory %q: %v", uploadDir, err))
-	}
-	return &UploadHandler{baseURL: baseURL, uploadDir: uploadDir}
+type UploadHandler struct {
+	s3 FileStorage
+}
+
+func NewUploadHandler(s3 FileStorage) *UploadHandler {
+	return &UploadHandler{s3: s3}
 }
 
 func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
@@ -37,47 +37,37 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("file")
+	file, _, err := r.FormFile("file")
 	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
 	defer file.Close()
 
-	buf := make([]byte, 512)
-	if _, err := file.Read(buf); err != nil {
+	raw, err := io.ReadAll(file)
+	if err != nil {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
-	contentType := http.DetectContentType(buf)
+
+	contentType := http.DetectContentType(raw)
 	if !strings.HasPrefix(contentType, "image/") {
 		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
 		return
 	}
 
-	// Возвращаемся в начало файла после чтения для определения типа
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		response.WriteHTTPError(w, definitions.ErrInvalidUserInput)
-		return
+	optimized, mimeType, optErr := imgopt.Optimize(raw)
+	if optErr != nil {
+		optimized = raw
+		mimeType = contentType
 	}
 
-	ext := filepath.Ext(header.Filename)
-	filename := uuid.New().String() + ext
-	dst := filepath.Join(h.uploadDir, filename)
-
-	out, err := os.Create(dst)
+	key := uuid.New().String() + ".jpg"
+	url, err := h.s3.Upload(r.Context(), key, optimized, mimeType)
 	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, file); err != nil {
-		response.WriteHTTPError(w, err)
-		return
-	}
-
-	url := fmt.Sprintf("/static/uploads/%s", filename)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

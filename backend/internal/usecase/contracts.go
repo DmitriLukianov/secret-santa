@@ -93,6 +93,7 @@ type EmailService interface {
 	SendLoginNotification(ctx context.Context, email, name string) error
 	SendOTP(ctx context.Context, email string) (string, error)
 	SendDrawNotification(ctx context.Context, email, eventTitle string, organizerNotes *string) error
+	SendDrawFailedNotification(ctx context.Context, email, eventTitle string, participantCount int) error
 	SendInvitationEmail(ctx context.Context, email, eventTitle, inviteURL string) error
 }
 

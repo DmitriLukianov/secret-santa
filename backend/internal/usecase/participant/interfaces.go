@@ -20,3 +20,7 @@ type Repository interface {
 type EventRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*entity.Event, error)
 }
+
+type DrawUseCase interface {
+	AutoDraw(ctx context.Context, eventID uuid.UUID) error
+}

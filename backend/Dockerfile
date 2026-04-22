@@ -9,7 +9,6 @@ FROM alpine:3.21
 WORKDIR /app
 RUN apk --no-cache add ca-certificates tzdata
 COPY --from=builder /app/server .
-RUN mkdir -p /app/uploads
 ENV TZ=UTC
 EXPOSE 8080
 CMD ["./server"]

@@ -1,7 +1,9 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -15,15 +17,24 @@ import (
 	"secret-santa-backend/internal/usecase"
 )
 
+// FileDeleter deletes a previously uploaded file by its public URL.
+type FileDeleter interface {
+	DeleteByURL(ctx context.Context, url string) error
+}
+
 type WishlistHandler struct {
 	uc            usecase.WishlistUseCase
 	participantUC usecase.ParticipantUseCase
+	files         FileDeleter // may be nil
+	log           *slog.Logger
 }
 
-func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.ParticipantUseCase) *WishlistHandler {
+func NewWishlistHandler(uc usecase.WishlistUseCase, participantUC usecase.ParticipantUseCase, files FileDeleter, log *slog.Logger) *WishlistHandler {
 	return &WishlistHandler{
 		uc:            uc,
 		participantUC: participantUC,
+		files:         files,
+		log:           log,
 	}
 }
 
@@ -314,6 +325,13 @@ func (h *WishlistHandler) UpdateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delete old S3 file if image was replaced or removed.
+	if h.files != nil && item.ImageURL != nil && *item.ImageURL != req.ImageURL {
+		if err := h.files.DeleteByURL(r.Context(), *item.ImageURL); err != nil {
+			h.log.Warn("failed to delete old S3 file", slog.String("url", *item.ImageURL), slog.String("error", err.Error()))
+		}
+	}
+
 	updatedItem, err := h.uc.UpdateItem(r.Context(), itemID, req.Title, &req.Link, &req.ImageURL, req.Price)
 	if err != nil {
 		response.WriteHTTPError(w, err)
@@ -358,6 +376,13 @@ func (h *WishlistHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	if err := h.uc.DeleteItem(r.Context(), itemID); err != nil {
 		response.WriteHTTPError(w, err)
 		return
+	}
+
+	// Delete file from S3 after successful DB deletion.
+	if h.files != nil && item.ImageURL != nil {
+		if err := h.files.DeleteByURL(r.Context(), *item.ImageURL); err != nil {
+			h.log.Warn("failed to delete S3 file", slog.String("url", *item.ImageURL), slog.String("error", err.Error()))
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

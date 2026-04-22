@@ -97,13 +97,8 @@ func (r *Repository) UpdateStatus(ctx context.Context, id uuid.UUID, status defi
 }
 
 func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
-	// Soft delete: ставим метку deleted_at вместо физического удаления.
-	// Данные (участники, жеребьёвка, чат) сохраняются для истории.
-	query, args, err := updateEventQuery().
-		Set("deleted_at", squirrel.Expr("NOW()")).
-		Set("updated_at", squirrel.Expr("NOW()")).
+	query, args, err := psql.Delete("events").
 		Where("id = ?", id).
-		Where("deleted_at IS NULL").
 		ToSql()
 	if err != nil {
 		return err

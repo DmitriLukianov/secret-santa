@@ -36,6 +36,7 @@ import (
 	wishlistusecase "secret-santa-backend/internal/usecase/wishlist"
 
 	v1 "secret-santa-backend/internal/controller/http/v1"
+	"secret-santa-backend/internal/storage"
 )
 
 type App struct {
@@ -74,14 +75,31 @@ func New() *App {
 	eventUC := eventusecase.NewWithLogger(eventRepo, participantRepo, log)
 	participantUC := participantusecase.NewWithLogger(participantRepo, eventRepo, log)
 	assignmentUC := assignmentusecase.NewWithLogger(assignmentRepo, participantRepo, eventRepo, userUC, emailService, log)
+	participantUC.SetDrawUseCase(assignmentUC)
 	wishlistUC := wishlistusecase.NewWithLogger(wishlistRepo, participantRepo, assignmentRepo, log)
 	invitationUC := invitationusecase.NewWithLogger(invitationRepo, eventRepo, participantUC, emailService, cfg.FrontendURL, log)
 	chatUC := chatusecase.NewWithLogger(chatRepo, participantRepo, assignmentRepo, log)
 
+	var s3Storage *storage.S3
+	if cfg.S3Enabled() {
+		s3Storage = storage.NewS3(cfg.S3Bucket, cfg.S3Region, cfg.S3Endpoint, cfg.S3AccessKey, cfg.S3SecretKey)
+		log.Info("S3 storage enabled", slog.String("bucket", cfg.S3Bucket))
+	} else {
+		log.Info("S3 not configured — uploads disabled")
+	}
+
+	// Convert *storage.S3 to interface only when non-nil to avoid typed-nil pitfall.
+	var fileDeleter v1.FileDeleter
+	var fileStorage v1.FileStorage
+	if s3Storage != nil {
+		fileDeleter = s3Storage
+		fileStorage = s3Storage
+	}
+
 	userHandler := v1.NewUserHandler(userUC)
 	eventHandler := v1.NewEventHandler(eventUC)
 	participantHandler := v1.NewParticipantHandler(participantUC, eventUC)
-	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC)
+	wishlistHandler := v1.NewWishlistHandler(wishlistUC, participantUC, fileDeleter, log)
 	assignmentHandler := v1.NewAssignmentHandler(assignmentUC)
 	invitationHandler := v1.NewInvitationHandler(invitationUC)
 	chatHandler := v1.NewChatHandler(chatUC)
@@ -99,7 +117,7 @@ func New() *App {
 	}
 
 	authHandler := v1.NewAuthHandler(authProvider, jwtManager, authUC, userUC, cfg.FrontendURL)
-	uploadHandler := v1.NewUploadHandler(cfg.AppBaseURL, cfg.UploadDir)
+	uploadHandler := v1.NewUploadHandler(fileStorage)
 
 	router := v1.NewRouter(
 		authHandler,

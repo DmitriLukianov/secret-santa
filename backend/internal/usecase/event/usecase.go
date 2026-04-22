@@ -123,6 +123,11 @@ func (uc *UseCase) Update(ctx context.Context, id, userID uuid.UUID, input dto.U
 		return definitions.ErrInvalidEventState
 	}
 
+	// Нельзя менять дату жеребьёвки, если она уже прошла (жеребьёвка была попытана)
+	if input.DrawDate != nil && eventPtr.DrawDate != nil && time.Now().After(*eventPtr.DrawDate) {
+		return definitions.ErrInvalidEventState
+	}
+
 	if uc.log != nil {
 		uc.log.Info("update event started", slog.String("event_id", id.String()))
 	}

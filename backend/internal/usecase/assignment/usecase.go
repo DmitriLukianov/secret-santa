@@ -3,9 +3,11 @@ package assignment
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
+	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
@@ -223,7 +225,38 @@ func (uc *UseCase) AutoDraw(ctx context.Context, eventID uuid.UUID) error {
 	if err != nil {
 		return fmt.Errorf("auto draw: event not found: %w", err)
 	}
-	return uc.Draw(ctx, eventID, eventPtr.OrganizerID)
+
+	drawErr := uc.Draw(ctx, eventID, eventPtr.OrganizerID)
+	if drawErr != nil && errors.Is(drawErr, definitions.ErrNotEnoughParticipants) {
+		// Отправляем письмо только один раз — в течение первых 2 минут после draw_date.
+		// Планировщик тикает каждую минуту, поэтому письмо придёт ровно на первом тике,
+		// а не каждую минуту бесконечно.
+		justMissed := eventPtr.DrawDate != nil && time.Since(*eventPtr.DrawDate) < 2*time.Minute
+		if justMissed && uc.emailService != nil && uc.userUC != nil {
+			participants, _ := uc.participantRepo.GetByEvent(ctx, eventID)
+			count := len(participants)
+			emailService := uc.emailService
+			userUC := uc.userUC
+			log := uc.log
+			organizerID := eventPtr.OrganizerID
+			eventTitle := eventPtr.Title
+			go func() {
+				organizer, getErr := userUC.GetByID(context.Background(), organizerID)
+				if getErr != nil || organizer == nil {
+					return
+				}
+				if emailErr := emailService.SendDrawFailedNotification(context.Background(), organizer.Email, eventTitle, count); emailErr != nil {
+					if log != nil {
+						log.Warn("failed to send draw-failed notification",
+							slog.String("organizer_id", organizerID.String()),
+							slog.String("error", emailErr.Error()),
+						)
+					}
+				}
+			}()
+		}
+	}
+	return drawErr
 }
 
 func (uc *UseCase) GetByEvent(ctx context.Context, eventID, userID uuid.UUID) ([]entity.Assignment, error) {

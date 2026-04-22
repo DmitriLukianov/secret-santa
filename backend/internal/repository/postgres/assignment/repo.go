@@ -2,6 +2,7 @@ package assignment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"secret-santa-backend/internal/definitions"
@@ -101,6 +102,20 @@ func (r *Repository) TransactionalDraw(ctx context.Context, eventID uuid.UUID, a
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	// Lock the event row to prevent concurrent draws across multiple scheduler instances.
+	// SKIP LOCKED means: if another transaction already holds the lock, skip this row and return no rows.
+	var lockedID uuid.UUID
+	err = tx.QueryRow(ctx,
+		`SELECT id FROM events WHERE id = $1 AND status = 'registration' FOR UPDATE SKIP LOCKED`,
+		eventID,
+	).Scan(&lockedID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // already processed by another instance or status changed
+		}
+		return fmt.Errorf("failed to lock event for draw: %w", err)
+	}
 
 	if err := r.deleteByEventTx(ctx, tx, eventID); err != nil {
 		return fmt.Errorf("failed to delete old assignments: %w", err)

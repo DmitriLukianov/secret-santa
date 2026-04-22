@@ -69,6 +69,14 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if event.OrganizerID != requesterID {
+		// Проверяем членство через прямой запрос (не через пагинацию)
+		if _, err := h.uc.GetByUserAndEvent(r.Context(), requesterID, eventID); err != nil {
+			response.WriteHTTPError(w, definitions.ErrForbidden)
+			return
+		}
+	}
+
 	pg := helpers.ParsePagination(r)
 	participants, total, err := h.uc.GetByEventPaged(r.Context(), eventID, pg.Limit, pg.Offset())
 	if err != nil {
@@ -76,23 +84,32 @@ func (h *ParticipantHandler) GetByEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Только участник или организатор события может видеть список
-	if event.OrganizerID != requesterID {
-		isMember := false
-		for _, p := range participants {
-			if p.UserID == requesterID {
-				isMember = true
-				break
-			}
-		}
-		if !isMember {
-			response.WriteHTTPError(w, definitions.ErrForbidden)
-			return
-		}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(helpers.NewPagedResponse(response.ParticipantsToResponse(participants), total, pg))
+}
+
+func (h *ParticipantHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	eventIDStr := chi.URLParam(r, "eventId")
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrInvalidUUID)
+		return
+	}
+
+	userID, err := helpers.GetUserID(r)
+	if err != nil {
+		response.WriteHTTPError(w, err)
+		return
+	}
+
+	participant, err := h.uc.GetByUserAndEvent(r.Context(), userID, eventID)
+	if err != nil {
+		response.WriteHTTPError(w, definitions.ErrParticipantNotFound)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(helpers.NewPagedResponse(response.ParticipantsToResponse(participants), total, pg))
+	json.NewEncoder(w).Encode(response.ParticipantToResponse(participant))
 }
 
 
