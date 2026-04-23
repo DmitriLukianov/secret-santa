@@ -118,6 +118,10 @@ func (uc *UseCase) Update(ctx context.Context, id, userID uuid.UUID, input dto.U
 		return definitions.ErrNotOrganizer
 	}
 
+	if input.OrganizerNotes != nil && len(*input.OrganizerNotes) > 500 {
+		return definitions.ErrInvalidUserInput
+	}
+
 	// Нельзя редактировать событие после начала жеребьёвки
 	if eventPtr.Status == definitions.EventStatusGifting || eventPtr.Status == definitions.EventStatusFinished {
 		return definitions.ErrInvalidEventState

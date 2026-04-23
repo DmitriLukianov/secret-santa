@@ -70,6 +70,10 @@ func WriteHTTPError(w http.ResponseWriter, err error) {
 		status = http.StatusForbidden
 		message = "У вас нет доступа к этому вишлисту"
 
+	case errors.Is(err, definitions.ErrEmailTaken):
+		status = http.StatusConflict
+		message = "Почта уже занята другим пользователем"
+
 	case errors.Is(err, definitions.ErrConflict):
 		status = http.StatusConflict
 		message = "Конфликт данных"

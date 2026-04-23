@@ -23,6 +23,7 @@ var (
 	ErrWishlistNotFound            = errors.New("wishlist not found")
 	ErrInvalidWishlistVisibility   = errors.New("invalid wishlist visibility")
 	ErrWishlistVisibilityForbidden = errors.New("wishlist visibility forbidden")
+	ErrEmailTaken                  = errors.New("email already taken")
 	ErrNotOrganizer                = errors.New("not organizer")
 	ErrNotSanta                    = errors.New("not santa")
 	ErrAssignmentNotFound          = errors.New("assignment not found")

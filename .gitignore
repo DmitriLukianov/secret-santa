@@ -14,5 +14,6 @@ front-cdek/dist
 .idea
 .vscode
 .DS_Store
+.claude
 
 front-cdek/

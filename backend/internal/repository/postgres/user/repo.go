@@ -2,10 +2,13 @@ package user
 
 import (
 	"context"
+	"errors"
 
+	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/entity"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -80,6 +83,12 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, name, email *stri
 		return err
 	}
 	_, err = r.db.Exec(ctx, sql, args...)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return definitions.ErrEmailTaken
+		}
+	}
 	return err
 }
 
