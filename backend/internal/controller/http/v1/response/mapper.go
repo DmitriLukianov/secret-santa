@@ -1,6 +1,10 @@
 package response
 
-import "secret-santa-backend/internal/entity"
+import (
+	"strings"
+
+	"secret-santa-backend/internal/entity"
+)
 
 func EventToResponse(e *entity.Event) EventResponse {
 	if e == nil {
@@ -34,10 +38,14 @@ func UserToResponse(u *entity.User) UserResponse {
 	if u == nil {
 		return UserResponse{}
 	}
+	email := u.Email
+	if strings.HasSuffix(email, "@users.github.com") {
+		email = ""
+	}
 	return UserResponse{
 		ID:    u.ID.String(),
 		Name:  u.Name,
-		Email: u.Email,
+		Email: email,
 	}
 }
 

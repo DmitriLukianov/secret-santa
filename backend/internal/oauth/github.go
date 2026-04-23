@@ -3,6 +3,7 @@ package oauth
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strconv"
 
 	"golang.org/x/oauth2"
@@ -60,7 +61,10 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 
 	email := ghUser.Email
 	if email == "" {
-		email = strconv.Itoa(ghUser.ID) + "@github.local"
+		email = p.fetchPrimaryEmail(ctx, client)
+	}
+	if email == "" {
+		email = strconv.Itoa(ghUser.ID) + "+" + ghUser.Login + "@users.github.com"
 	}
 
 	return UserInfo{
@@ -69,4 +73,36 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 		Email:    email,
 		Provider: "github",
 	}, nil
+}
+
+// fetchPrimaryEmail запрашивает /user/emails и возвращает основной подтверждённый email.
+func (p *GitHubProvider) fetchPrimaryEmail(ctx context.Context, client interface {
+	Get(string) (*http.Response, error)
+}) string {
+	resp, err := client.Get("https://api.github.com/user/emails")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var emails []struct {
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
+		return ""
+	}
+
+	for _, e := range emails {
+		if e.Primary && e.Verified {
+			return e.Email
+		}
+	}
+	for _, e := range emails {
+		if e.Verified {
+			return e.Email
+		}
+	}
+	return ""
 }
