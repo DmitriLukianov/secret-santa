@@ -135,6 +135,12 @@ func (uc *UseCase) Delete(ctx context.Context, id, requesterID uuid.UUID) error 
 		return definitions.ErrForbidden
 	}
 
+	// Участник не может выйти после начала дарения; организатор может удалить в любой момент
+	if event.OrganizerID != requesterID &&
+		(event.Status == definitions.EventStatusGifting || event.Status == definitions.EventStatusFinished) {
+		return definitions.ErrInvalidEventState
+	}
+
 	if err := uc.repo.Delete(ctx, id); err != nil {
 		if uc.log != nil {
 			uc.log.Error("failed to delete participant", slog.String("error", err.Error()))
