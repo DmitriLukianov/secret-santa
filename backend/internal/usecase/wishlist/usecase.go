@@ -73,6 +73,9 @@ func (uc *UseCase) AddItem(ctx context.Context, wishlistID uuid.UUID, title stri
 	if wishlistID == uuid.Nil {
 		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
 	}
+	if price != nil && (*price <= 0 || *price > 100000) {
+		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
+	}
 
 	item := entity.NewWishlistItem(wishlistID, title, link, imageURL, price)
 	createdItem, err := uc.repo.CreateItem(ctx, item)
@@ -168,6 +171,9 @@ func (uc *UseCase) GetForUser(ctx context.Context, eventID, participantID, reque
 
 func (uc *UseCase) UpdateItem(ctx context.Context, itemID uuid.UUID, title string, link, imageURL *string, price *float64) (entity.WishlistItem, error) {
 	if itemID == uuid.Nil {
+		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
+	}
+	if price != nil && (*price <= 0 || *price > 100000) {
 		return entity.WishlistItem{}, definitions.ErrInvalidUserInput
 	}
 

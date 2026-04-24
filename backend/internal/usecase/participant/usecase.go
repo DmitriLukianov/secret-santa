@@ -135,9 +135,8 @@ func (uc *UseCase) Delete(ctx context.Context, id, requesterID uuid.UUID) error 
 		return definitions.ErrForbidden
 	}
 
-	// Участник не может выйти после начала дарения; организатор может удалить в любой момент
-	if event.OrganizerID != requesterID &&
-		(event.Status == definitions.EventStatusGifting || event.Status == definitions.EventStatusFinished) {
+	// Участник не может выйти во время дарения; из завершённой — может; организатор без ограничений
+	if event.OrganizerID != requesterID && event.Status == definitions.EventStatusGifting {
 		return definitions.ErrInvalidEventState
 	}
 

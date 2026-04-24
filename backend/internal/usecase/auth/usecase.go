@@ -19,7 +19,6 @@ type UseCase struct {
 	userUC           usecase.UserUseCase
 	emailService     usecase.EmailService
 	verificationRepo usecase.VerificationRepository
-	smtpEnabled      bool
 	otpExpiryMinutes int
 	log              *slog.Logger
 }
@@ -29,7 +28,6 @@ func New(userUC usecase.UserUseCase, emailService usecase.EmailService, verifica
 		userUC:           userUC,
 		emailService:     emailService,
 		verificationRepo: verificationRepo,
-		smtpEnabled:      smtpEnabled,
 		otpExpiryMinutes: 10,
 	}
 }
@@ -42,7 +40,6 @@ func NewWithLogger(userUC usecase.UserUseCase, emailService usecase.EmailService
 		userUC:           userUC,
 		emailService:     emailService,
 		verificationRepo: verificationRepo,
-		smtpEnabled:      smtpEnabled,
 		otpExpiryMinutes: otpExpiryMinutes,
 		log:              log,
 	}
@@ -119,19 +116,7 @@ func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 		uc.log.Info("send otp started", slog.String("email", email))
 	}
 
-	code, err := uc.emailService.SendOTP(ctx, email)
-	if err != nil {
-		return fmt.Errorf("failed to send OTP: %w", err)
-	}
-
-	// Когда SMTP не настроен, email не отправляется, но код сохраняется.
-	// Логируем код, чтобы разработчик мог использовать его вручную.
-	if !uc.smtpEnabled && uc.log != nil {
-		uc.log.Warn("SMTP не настроен — OTP-код не отправлен на почту",
-			slog.String("email", email),
-			slog.String("otp_code", code),
-		)
-	}
+	code := uc.emailService.GenerateOTP()
 
 	// Инвалидируем все старые коды для этого email перед отправкой нового
 	_ = uc.verificationRepo.InvalidateCodes(ctx, email)
@@ -140,6 +125,18 @@ func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 	if err := uc.verificationRepo.SaveCode(ctx, email, code, expiresAt); err != nil {
 		return fmt.Errorf("failed to save verification code: %w", err)
 	}
+
+	// Отправляем письмо в фоне — не блокируем HTTP-запрос
+	log := uc.log
+	emailService := uc.emailService
+	go func() {
+		if err := emailService.SendOTPCode(context.Background(), email, code); err != nil && log != nil {
+			log.Warn("failed to send OTP email",
+				slog.String("email", email),
+				slog.String("error", err.Error()),
+			)
+		}
+	}()
 
 	return nil
 }

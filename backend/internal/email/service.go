@@ -37,9 +37,11 @@ func (s *Service) SendLoginNotification(ctx context.Context, email, name string)
 	return s.send(ctx, email, subject, body)
 }
 
-func (s *Service) SendOTP(ctx context.Context, email string) (string, error) {
-	code := s.generateOTP()
+func (s *Service) GenerateOTP() string {
+	return s.generateOTP()
+}
 
+func (s *Service) SendOTPCode(ctx context.Context, email, code string) error {
 	subject := "🔑 Код подтверждения для Тайный Санта"
 	body := fmt.Sprintf(`Ваш код подтверждения: %s
 
@@ -51,17 +53,15 @@ func (s *Service) SendOTP(ctx context.Context, email string) (string, error) {
 Команда Тайный Санта`, code, s.cfg.OTPExpiryMinutes)
 
 	if err := s.send(ctx, email, subject, body); err != nil {
-		// Код сгенерирован — логируем его, чтобы можно было использовать вручную.
-		// Ошибку отправки не пробрасываем: пользователь всё равно может ввести код из лога.
 		if s.log != nil {
-			s.log.Warn("не удалось отправить OTP на почту, код доступен в логах",
+			s.log.Warn("не удалось отправить OTP на почту",
 				slog.String("email", email),
-				slog.String("otp_code", code),
 				slog.String("send_error", err.Error()),
 			)
 		}
+		return err
 	}
-	return code, nil
+	return nil
 }
 
 func (s *Service) SendInvitationEmail(ctx context.Context, email, eventTitle, inviteURL string) error {
