@@ -2,12 +2,19 @@
 export
 
 up:
+	docker compose up -d --build postgres migrate backend
+
+up-all:
 	docker compose up -d --build
 
 down:
 	docker compose down
 
 rebuild:
+	docker compose down
+	docker compose up -d --build postgres migrate backend
+
+rebuild-all:
 	docker compose down
 	docker compose up -d --build
 
@@ -29,4 +36,4 @@ db-clean:
 
 db-reset:
 	docker compose down -v
-	docker compose up -d --build
+	docker compose up -d --build postgres migrate backend
