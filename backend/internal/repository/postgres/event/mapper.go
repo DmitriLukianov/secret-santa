@@ -15,6 +15,7 @@ func ScanEvent(row pgx.Row) (*entity.Event, error) {
 		&e.OrganizerID,
 		&e.StartDate,
 		&e.DrawDate,
+		&e.Budget,
 		&e.Status,
 		&e.CreatedAt,
 		&e.UpdatedAt,

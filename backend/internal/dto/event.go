@@ -12,6 +12,7 @@ type CreateEventInput struct {
 	DrawDate        *time.Time `json:"drawDate"`
 	EndDate         *time.Time `json:"endDate"`
 	MaxParticipants *int       `json:"maxParticipants"`
+	Budget          *int       `json:"budget"`
 	WantParticipate bool       `json:"wantParticipate"`
 }
 
@@ -26,4 +27,5 @@ type UpdateEventInput struct {
 	ClearDrawDate   bool       `json:"clearDrawDate"`
 	EndDate         *time.Time `json:"endDate"`
 	MaxParticipants *int       `json:"maxParticipants"`
+	Budget          *int       `json:"budget"`
 }

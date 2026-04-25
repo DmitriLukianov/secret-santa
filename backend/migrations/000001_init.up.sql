@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS events (
     organizer_id    UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     start_date      TIMESTAMPTZ  NOT NULL,
     draw_date       TIMESTAMPTZ,
+    budget          INT,
     status          VARCHAR(50)  NOT NULL DEFAULT 'registration',
     deleted_at      TIMESTAMPTZ,
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),

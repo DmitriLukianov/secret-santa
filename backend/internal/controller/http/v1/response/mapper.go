@@ -17,6 +17,7 @@ func EventToResponse(e *entity.Event) EventResponse {
 		OrganizerID:    e.OrganizerID.String(),
 		StartDate:      e.StartDate,
 		DrawDate:       e.DrawDate,
+		Budget:         e.Budget,
 		Status:         string(e.Status),
 		CreatedAt:      e.CreatedAt,
 		UpdatedAt:      e.UpdatedAt,

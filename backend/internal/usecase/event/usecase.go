@@ -63,6 +63,7 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 		input.OrganizerNotes,
 		startDate,
 		input.DrawDate,
+		input.Budget,
 	)
 
 	createdEvent, err := uc.repo.Create(ctx, event)

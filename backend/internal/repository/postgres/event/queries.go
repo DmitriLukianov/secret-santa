@@ -12,6 +12,7 @@ func getEventQuery() squirrel.SelectBuilder {
 		"events.organizer_id",
 		"events.start_date",
 		"events.draw_date",
+		"events.budget",
 		"events.status",
 		"events.created_at",
 		"events.updated_at",
@@ -28,7 +29,7 @@ func createEventQuery() squirrel.InsertBuilder {
 		Columns(
 			"title", "organizer_notes",
 			"organizer_id", "start_date", "draw_date",
-			"status",
+			"budget", "status",
 		)
 }
 

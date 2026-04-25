@@ -55,6 +55,7 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		DrawDate:        req.DrawDate,
 		EndDate:         req.EndDate,
 		MaxParticipants: req.MaxParticipants,
+		Budget:          req.Budget,
 		WantParticipate: wantParticipate,
 	}
 
@@ -140,6 +141,7 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		ClearDrawDate:   req.ClearDrawDate,
 		EndDate:         req.EndDate,
 		MaxParticipants: req.MaxParticipants,
+		Budget:          req.Budget,
 	}
 
 	if err := h.uc.Update(r.Context(), id, userID, input); err != nil {

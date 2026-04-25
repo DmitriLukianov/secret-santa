@@ -15,6 +15,7 @@ type Event struct {
 	OrganizerID    uuid.UUID               `db:"organizer_id"`
 	StartDate      time.Time               `db:"start_date"`
 	DrawDate       *time.Time              `db:"draw_date"`
+	Budget         *int                    `db:"budget"`
 	Status         definitions.EventStatus `db:"status"`
 	CreatedAt      time.Time               `db:"created_at"`
 	UpdatedAt      time.Time               `db:"updated_at"`
@@ -26,6 +27,7 @@ func NewEvent(
 	organizerNotes *string,
 	startDate time.Time,
 	drawDate *time.Time,
+	budget *int,
 ) Event {
 	return Event{
 		Title:          title,
@@ -33,6 +35,7 @@ func NewEvent(
 		OrganizerID:    organizerID,
 		StartDate:      startDate,
 		DrawDate:       drawDate,
+		Budget:         budget,
 		Status:         definitions.EventStatusRegistration,
 	}
 }

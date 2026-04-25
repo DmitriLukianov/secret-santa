@@ -28,10 +28,11 @@ func (r *Repository) Create(ctx context.Context, e entity.Event) (entity.Event, 
 			e.OrganizerID,
 			e.StartDate,
 			e.DrawDate,
+			e.Budget,
 			e.Status,
 		).
 		Suffix("RETURNING id, title, organizer_notes, organizer_id, " +
-			"start_date, draw_date, status, created_at, updated_at").
+			"start_date, draw_date, budget, status, created_at, updated_at").
 		ToSql()
 
 	if err != nil {
@@ -74,6 +75,9 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateE
 		q = q.Set("draw_date", nil)
 	} else if input.DrawDate != nil {
 		q = q.Set("draw_date", *input.DrawDate)
+	}
+	if input.Budget != nil {
+		q = q.Set("budget", *input.Budget)
 	}
 
 	query, args, err := q.Where("id = ?", id).ToSql()
