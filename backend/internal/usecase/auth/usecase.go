@@ -111,10 +111,14 @@ func (uc *UseCase) LoginWithOAuth(ctx context.Context, info oauth.UserInfo) (str
 	return createdUser.ID.String(), nil
 }
 
-func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
+// SendOTP sends a one-time code to the given email and returns whether the account is new.
+func (uc *UseCase) SendOTP(ctx context.Context, email string) (isNewUser bool, err error) {
 	if uc.log != nil {
 		uc.log.Info("send otp started", slog.String("email", email))
 	}
+
+	existingUser, lookupErr := uc.userUC.GetByEmail(ctx, email)
+	isNewUser = lookupErr != nil || existingUser == nil
 
 	code := uc.emailService.GenerateOTP()
 
@@ -123,7 +127,7 @@ func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 
 	expiresAt := time.Now().Add(time.Duration(uc.otpExpiryMinutes) * time.Minute)
 	if err := uc.verificationRepo.SaveCode(ctx, email, code, expiresAt); err != nil {
-		return fmt.Errorf("failed to save verification code: %w", err)
+		return false, fmt.Errorf("failed to save verification code: %w", err)
 	}
 
 	// Отправляем письмо в фоне — не блокируем HTTP-запрос
@@ -138,7 +142,7 @@ func (uc *UseCase) SendOTP(ctx context.Context, email string) error {
 		}
 	}()
 
-	return nil
+	return isNewUser, nil
 }
 
 func (uc *UseCase) VerifyOTP(ctx context.Context, email, code, name string) (string, error) {

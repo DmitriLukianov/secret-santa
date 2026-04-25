@@ -4,19 +4,12 @@ export
 up:
 	docker compose up -d --build postgres migrate backend
 
-up-all:
-	docker compose up -d --build
-
 down:
 	docker compose down
 
 rebuild:
 	docker compose down
 	docker compose up -d --build postgres migrate backend
-
-rebuild-all:
-	docker compose down
-	docker compose up -d --build
 
 migrate-up:
 	docker compose run --rm migrate \

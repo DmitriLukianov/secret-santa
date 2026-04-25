@@ -132,14 +132,16 @@ func (h *AuthHandler) SendOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.uc.SendOTP(r.Context(), req.Email); err != nil {
+	isNewUser, err := h.uc.SendOTP(r.Context(), req.Email)
+	if err != nil {
 		response.WriteHTTPError(w, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Код отправлен на почту",
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":   "Код отправлен на почту",
+		"isNewUser": isNewUser,
 	})
 }
 
