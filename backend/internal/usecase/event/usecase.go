@@ -21,6 +21,11 @@ type UseCase struct {
 	repo            Repository
 	participantRepo participant.Repository
 	log             *slog.Logger
+	scheduler       Scheduler
+}
+
+func (uc *UseCase) SetScheduler(s Scheduler) {
+	uc.scheduler = s
 }
 
 func New(repo Repository) *UseCase {
@@ -87,6 +92,11 @@ func (uc *UseCase) Create(ctx context.Context, input dto.CreateEventInput, organ
 			slog.String("event_id", createdEvent.ID.String()),
 		)
 	}
+
+	if uc.scheduler != nil && createdEvent.DrawDate != nil {
+		uc.scheduler.Schedule(createdEvent.ID, *createdEvent.DrawDate)
+	}
+
 	return createdEvent, nil
 }
 
@@ -146,6 +156,15 @@ func (uc *UseCase) Update(ctx context.Context, id, userID uuid.UUID, input dto.U
 	if uc.log != nil {
 		uc.log.Info("event updated successfully", slog.String("event_id", id.String()))
 	}
+
+	if uc.scheduler != nil {
+		if input.ClearDrawDate {
+			uc.scheduler.Cancel(id)
+		} else if input.DrawDate != nil {
+			uc.scheduler.Schedule(id, *input.DrawDate)
+		}
+	}
+
 	return nil
 }
 
@@ -168,6 +187,11 @@ func (uc *UseCase) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	if uc.log != nil {
 		uc.log.Info("delete event", slog.String("event_id", id.String()))
 	}
+
+	if uc.scheduler != nil {
+		uc.scheduler.Cancel(id)
+	}
+
 	return uc.repo.Delete(ctx, id)
 }
 

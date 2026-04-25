@@ -124,6 +124,21 @@ func (r *Repository) GetDueForDraw(ctx context.Context) ([]entity.Event, error) 
 	return ScanEvents(rows)
 }
 
+func (r *Repository) GetPendingDraws(ctx context.Context) ([]entity.Event, error) {
+	query, args, err := getEventQuery().
+		Where("draw_date > NOW() AND status = ?", definitions.EventStatusRegistration).
+		ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return ScanEvents(rows)
+}
+
 func (r *Repository) GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error) {
 	query, args, err := getEventsForUserQuery().
 		Where("events.organizer_id = ? OR p.user_id = ?", userID, userID).

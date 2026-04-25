@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"time"
 
 	"secret-santa-backend/internal/definitions"
 	"secret-santa-backend/internal/dto"
@@ -18,4 +19,9 @@ type Repository interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status definitions.EventStatus) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetEventsForUser(ctx context.Context, userID uuid.UUID) ([]entity.Event, error)
+}
+
+type Scheduler interface {
+	Schedule(eventID uuid.UUID, drawAt time.Time)
+	Cancel(eventID uuid.UUID)
 }

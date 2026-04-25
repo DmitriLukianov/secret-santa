@@ -136,7 +136,9 @@ func New() *App {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	scheduler.New(eventRepo, assignmentUC, log).Start(ctx)
+	sched := scheduler.New(eventRepo, assignmentUC, log)
+	eventUC.SetScheduler(sched)
+	sched.Start(ctx)
 
 	return &App{
 		cfg:    cfg,
