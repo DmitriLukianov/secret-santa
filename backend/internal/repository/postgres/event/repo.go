@@ -70,7 +70,9 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, input dto.UpdateE
 	if input.StartDate != nil {
 		q = q.Set("start_date", *input.StartDate)
 	}
-	if input.DrawDate != nil {
+	if input.ClearDrawDate {
+		q = q.Set("draw_date", nil)
+	} else if input.DrawDate != nil {
 		q = q.Set("draw_date", *input.DrawDate)
 	}
 

@@ -137,6 +137,7 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		OrganizerNotes:  req.OrganizerNotes,
 		StartDate:       req.StartDate,
 		DrawDate:        req.DrawDate,
+		ClearDrawDate:   req.ClearDrawDate,
 		EndDate:         req.EndDate,
 		MaxParticipants: req.MaxParticipants,
 	}

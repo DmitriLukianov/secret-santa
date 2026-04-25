@@ -23,6 +23,7 @@ type UpdateEventRequest struct {
 	OrganizerNotes  *string    `json:"organizerNotes"`
 	StartDate       *time.Time `json:"startDate"`
 	DrawDate        *time.Time `json:"drawDate"`
+	ClearDrawDate   bool       `json:"clearDrawDate"`
 	EndDate         *time.Time `json:"endDate"`
 	MaxParticipants *int       `json:"maxParticipants"`
 }
